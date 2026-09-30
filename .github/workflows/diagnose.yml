@@ -53,10 +53,19 @@ jobs:
         run: |
           set -u
           report() {
+            # Strip ANSI, keep the failure section (or the tail), emit it as several annotations
             local name="$1" file="$2"
-            local body
-            body=$(tail -n 80 "$file" | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
-            echo "::error title=${name}::${body}"
+            sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' "$file" > "/tmp/${name}.clean"
+            if grep -qnE '(FAILED|FAIL |Error|Exception)' "/tmp/${name}.clean" && [ "$name" = "tests" ]; then
+              grep -vE '^\s*(✓|PASS)' "/tmp/${name}.clean" | grep -nE -A400 '(FAILED|⨯|FAIL )' | head -n 400 > "/tmp/${name}.section" || true
+            fi
+            [ -s "/tmp/${name}.section" ] || tail -n 120 "/tmp/${name}.clean" > "/tmp/${name}.section"
+            split -C 2500 -d -a 1 "/tmp/${name}.section" "/tmp/${name}.part."
+            for part in $(ls /tmp/${name}.part.* | head -n 9); do
+              local body
+              body=$(sed 's/%/%25/g' "$part" | sed ':a;N;$!ba;s/\n/%0A/g' | sed 's/\r/%0D/g')
+              echo "::error title=${name} $(basename "$part")::${body}"
+            done
           }
           step() {
             local name="$1"; shift
@@ -74,4 +83,4 @@ jobs:
           step env bash -c 'cp .env.example .env && php artisan key:generate'
           step migrate php artisan migrate --force
           step view-cache php artisan view:cache
-          step tests php artisan test
+          step tests php artisan test --colors=never
