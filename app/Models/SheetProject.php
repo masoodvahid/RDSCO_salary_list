@@ -11,6 +11,9 @@ class SheetProject extends Model
 {
     protected $fillable = ['sheet_id', 'project_id', 'stage', 'submitted_at', 'submitted_by'];
 
+    /** Mirrors the column defaults so freshly created models match the database. */
+    protected $attributes = ['stage' => 0];
+
     protected function casts(): array
     {
         return [

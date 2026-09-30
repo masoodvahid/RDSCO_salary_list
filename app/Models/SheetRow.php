@@ -17,6 +17,9 @@ class SheetRow extends Model
         'position', 'review_status', 'reviewed_by', 'reviewed_at',
     ];
 
+    /** Mirrors the column defaults so freshly created models match the database. */
+    protected $attributes = ['review_status' => 'pending', 'position' => 0];
+
     protected function casts(): array
     {
         return [

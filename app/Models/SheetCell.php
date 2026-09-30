@@ -9,6 +9,9 @@ class SheetCell extends Model
 {
     protected $fillable = ['row_id', 'column_id', 'value', 'version', 'updated_by'];
 
+    /** Mirrors the column defaults so freshly created models match the database. */
+    protected $attributes = ['version' => 1];
+
     protected function casts(): array
     {
         return ['version' => 'integer'];

@@ -13,6 +13,9 @@ class Project extends Model
 
     protected $fillable = ['name', 'is_active'];
 
+    /** Mirrors the column defaults so freshly created models match the database. */
+    protected $attributes = ['is_active' => true];
+
     protected function casts(): array
     {
         return ['is_active' => 'boolean'];

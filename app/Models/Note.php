@@ -13,6 +13,9 @@ class Note extends Model
 
     protected $fillable = ['sheet_id', 'row_id', 'user_id', 'kind', 'body'];
 
+    /** Mirrors the column defaults so freshly created models match the database. */
+    protected $attributes = ['kind' => 'note'];
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

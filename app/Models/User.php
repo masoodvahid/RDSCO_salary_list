@@ -19,6 +19,9 @@ class User extends Authenticatable
 
     protected $hidden = ['remember_token'];
 
+    /** Mirrors the column defaults so freshly created models match the database. */
+    protected $attributes = ['role' => 'viewer', 'is_active' => true];
+
     protected function casts(): array
     {
         return [

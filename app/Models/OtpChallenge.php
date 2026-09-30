@@ -18,6 +18,9 @@ class OtpChallenge extends Model
 
     protected $hidden = ['code_hash'];
 
+    /** Mirrors the column defaults so freshly created models match the database. */
+    protected $attributes = ['attempts' => 0];
+
     protected function casts(): array
     {
         return [

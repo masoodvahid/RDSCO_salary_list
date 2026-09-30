@@ -10,6 +10,9 @@ class SheetColumn extends Model
 {
     protected $fillable = ['sheet_id', 'title', 'type', 'is_locked', 'position'];
 
+    /** Mirrors the column defaults so freshly created models match the database. */
+    protected $attributes = ['type' => 'number', 'is_locked' => false, 'position' => 0];
+
     protected function casts(): array
     {
         return [
