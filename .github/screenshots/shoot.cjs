@@ -23,6 +23,31 @@ async function login(page, mobile) {
     await page.waitForURL(`${BASE}/`);
 }
 
+// Elements that stick out of the viewport horizontally without a clipping ancestor.
+async function overflowReport(page, label) {
+    const report = await page.evaluate(() => {
+        const width = document.documentElement.clientWidth;
+        const lines = [`scrollWidth=${document.documentElement.scrollWidth} clientWidth=${width}`];
+        for (const el of document.querySelectorAll('body *')) {
+            const r = el.getBoundingClientRect();
+            if (!r.width || (r.left >= -1 && r.right <= width + 1)) continue;
+            let parent = el.parentElement;
+            let clipped = false;
+            while (parent && parent !== document.body) {
+                if (getComputedStyle(parent).overflowX !== 'visible') { clipped = true; break; }
+                parent = parent.parentElement;
+            }
+            if (!clipped) lines.push(`${el.tagName}.${String(el.className).slice(0, 90)} left=${Math.round(r.left)} right=${Math.round(r.right)}`);
+        }
+        return lines.slice(0, 20).join('\n');
+    });
+    errors.push(`[overflow ${label}]\n${report}`);
+}
+
+async function snapshot(page, name) {
+    fs.writeFileSync(`${OUT}/${name}.html`, await page.content());
+}
+
 async function shot(page, name, options = {}) {
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${OUT}/${name}.png`, ...options });
@@ -86,7 +111,12 @@ async function shot(page, name, options = {}) {
         await page.keyboard.press('Escape');
 
         await page.goto(`${BASE}/members`);
+        await snapshot(page, 'members');
         await shot(page, '09-members', { fullPage: true });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await overflowReport(page, 'members-mobile');
+        await shot(page, '14-members-mobile', { fullPage: true });
+        await page.setViewportSize({ width: 1440, height: 900 });
 
         await page.goto(`${BASE}/projects`);
         await shot(page, '10-projects');
@@ -94,7 +124,13 @@ async function shot(page, name, options = {}) {
         const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
         const phone = await mobile.newPage();
         await login(phone, '09120000004');
+        await overflowReport(phone, 'dashboard-mobile');
+        await snapshot(phone, 'dashboard-mobile');
         await shot(phone, '11-dashboard-mobile', { fullPage: true });
+        await phone.getByRole('link', { name: 'باز کردن شیت ماه' }).click();
+        await phone.waitForSelector('table.sheet');
+        await overflowReport(phone, 'grid-mobile');
+        await shot(phone, '13-grid-mobile');
 
         const editorContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
         const editor = await editorContext.newPage();
