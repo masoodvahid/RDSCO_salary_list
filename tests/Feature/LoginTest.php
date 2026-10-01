@@ -18,7 +18,7 @@ class LoginTest extends TestCase
     public function test_guests_are_sent_to_login(): void
     {
         $this->get('/')->assertRedirect(route('login'));
-        $this->get(route('login'))->assertOk()->assertSee('ورود به سامانه');
+        $this->get(route('login'))->assertOk()->assertSee('ورود به سامانه')->assertSee('js/busy.js', false);
     }
 
     public function test_user_logs_in_with_an_sms_code(): void
