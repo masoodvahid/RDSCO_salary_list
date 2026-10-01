@@ -12,6 +12,7 @@
         'national_code' => ['کد ملی', '', 116, true],
     ];
     $showReview = $user->isManager() || $user->isGlobalApprover();
+    $gripIcon = '<svg class="size-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
     $plusIcon = '<svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
     $trashIcon = '<svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>';
     $lockIcon = '<svg class="size-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
@@ -23,9 +24,9 @@
     <div class="no-print border-b border-line bg-white px-4 py-3 sm:px-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex flex-wrap items-center gap-2.5">
-                <a href="{{ route('dashboard', ['sheet' => $sheet->id]) }}" wire:navigate class="text-sm text-ink-soft hover:text-accent">شیت‌ها</a>
+                <a href="{{ route('dashboard', ['sheet' => $sheet->id]) }}" wire:navigate class="text-sm text-ink-soft hover:text-accent">لیست‌های حقوق</a>
                 <span class="text-zinc-300" aria-hidden="true">/</span>
-                <h1 class="text-lg font-extrabold">شیت {{ $sheet->title() }}@if ($currentSp) <span class="font-medium text-ink-soft">/ {{ $currentSp->project->name }}</span>@endif</h1>
+                <h1 class="text-lg font-extrabold">لیست حقوق {{ $sheet->title() }}@if ($currentSp) <span class="font-medium text-ink-soft">/ {{ $currentSp->project->name }}</span>@endif</h1>
                 @if ($currentSp)
                     <x-stage-badge :stage="$currentSp->stage" />
                     @if ($currentSp->submitted_at && $currentSp->stage === Stage::Draft)
@@ -152,9 +153,18 @@
                                 $column->hasRange() ? 'مقدار مجاز: '.$column->rangeLabel() : null,
                             ])->filter()->implode(' — ');
                         @endphp
-                        <th @class(['px-2', 'is-locked' => $column->is_locked]) style="width: {{ $column->type === ColumnType::Text ? 180 : 130 }}px" wire:key="col-{{ $column->id }}" title="{{ $headerHint }}">
+                        <th @class(['px-2', 'is-locked' => $column->is_locked]) style="width: {{ $column->type === ColumnType::Text ? 180 : 130 }}px" wire:key="col-{{ $column->id }}" title="{{ $headerHint }}"
+                            data-column-id="{{ $column->id }}"
+                            @if ($column->hasRange())
+                                @if ($column->min_value !== null) data-min="{{ $column->min_value }}" @endif
+                                @if ($column->max_value !== null) data-max="{{ $column->max_value }}" @endif
+                                data-range-message="{{ $column->rangeMessage() }}"
+                            @endif>
                             <div class="flex items-center justify-between gap-1">
-                                <span class="min-w-0 leading-tight">
+                                @if ($isManager)
+                                    <span data-col-grip class="col-grip" title="برای جابه‌جایی ستون، بکشید">{!! $gripIcon !!}</span>
+                                @endif
+                                <span class="min-w-0 flex-1 leading-tight">
                                     <span class="flex items-center gap-1">
                                         @if ($column->is_locked) {!! $lockIcon !!} @endif
                                         <span class="truncate">{{ $column->title }}</span>
@@ -578,7 +588,7 @@
                 <form wire:submit="import" id="import-form" class="space-y-3">
                     <p class="text-[13px] leading-6 text-ink-soft">
                         سطر اول فایل عنوان ستون‌هاست. لازم: <b>نام</b>، <b>نام خانوادگی</b>، <b>کد ملی</b>. اختیاری: <b>کد پرسنلی</b>، <b>پروژه</b>.
-                        ستون‌های دیگر با ستون هم‌نام شیت پر می‌شوند یا ستون تازه می‌سازند. پرسنل موجود (بر اساس کد ملی) به‌روزرسانی می‌شوند.
+                        ستون‌های دیگر با ستون هم‌نام در لیست حقوق پر می‌شوند یا ستون تازه می‌سازند. پرسنل موجود (بر اساس کد ملی) به‌روزرسانی می‌شوند.
                     </p>
                     <input type="file" wire:model="importFile" accept=".xlsx,.csv" class="block w-full rounded-lg border border-dashed border-line-strong p-3 text-sm file:me-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-2 file:text-white">
                     <div wire:loading wire:target="importFile" class="text-xs text-ink-soft">در حال بارگذاری…</div>

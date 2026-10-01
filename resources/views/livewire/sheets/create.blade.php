@@ -1,7 +1,7 @@
 <div class="mx-auto max-w-xl px-4 py-8 sm:px-6">
-    <a href="{{ route('dashboard') }}" wire:navigate class="text-sm font-medium text-accent hover:underline hover:underline-offset-4">بازگشت به شیت‌ها</a>
-    <h1 class="page-title mt-3">شیت ماه جدید</h1>
-    <p class="page-lead">هر ماه یک شیت دارد که همه پرسنل در آن هستند و پروژه هر نفر در ستون «پروژه» مشخص می‌شود.</p>
+    <a href="{{ route('dashboard') }}" wire:navigate class="text-sm font-medium text-accent hover:underline hover:underline-offset-4">بازگشت به لیست‌های حقوق</a>
+    <h1 class="page-title mt-3">لیست حقوق ماه جدید</h1>
+    <p class="page-lead">هر ماه یک لیست حقوق دارد که همه پرسنل در آن هستند و پروژه هر نفر در ستون «پروژه» مشخص می‌شود.</p>
 
     <form wire:submit="create" class="card mt-6 space-y-5 p-6">
         <div class="grid grid-cols-2 gap-4">
@@ -44,7 +44,7 @@
         </div>
 
         <div class="flex justify-end border-t border-line pt-5">
-            <button type="submit" class="btn btn-primary" wire:loading.attr="disabled">ساخت شیت</button>
+            <button type="submit" class="btn btn-primary" wire:loading.attr="disabled">ساخت لیست حقوق</button>
         </div>
     </form>
 </div>

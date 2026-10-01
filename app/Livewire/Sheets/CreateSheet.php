@@ -75,6 +75,6 @@ class CreateSheet extends Component
         return view('livewire.sheets.create', [
             'sheets' => Sheet::orderByDesc('jalali_year')->orderByDesc('jalali_month')->get(),
             'months' => Jalali::monthNames(),
-        ])->title('شیت ماه جدید');
+        ])->title('لیست حقوق ماه جدید');
     }
 }

@@ -63,11 +63,15 @@ class SheetColumn extends Model
             || ($this->max_value !== null && Digits::compare($value, $this->max_value) > 0);
     }
 
+    /** The validation message for this column's range (shared by the server and the grid script). */
+    public function rangeMessage(): ?string
+    {
+        return $this->hasRange() ? "مقدار «{$this->title}» باید {$this->rangeLabel()} باشد." : null;
+    }
+
     /** Message for a value outside the range, or null when the value is allowed. */
     public function rangeError(?string $value): ?string
     {
-        return $this->isOutOfRange($value)
-            ? "مقدار «{$this->title}» باید {$this->rangeLabel()} باشد."
-            : null;
+        return $this->isOutOfRange($value) ? $this->rangeMessage() : null;
     }
 }

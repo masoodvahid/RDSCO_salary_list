@@ -25,9 +25,10 @@ class PagesTest extends TestCase
     {
         $this->actingAs($this->manager);
 
-        $this->get(route('dashboard'))->assertOk()->assertSee('شیت حقوق');
-        $this->get(route('sheets.show', $this->sheet))->assertOk()->assertSee('آرش')->assertSee('بردیا')->assertSee('ستون جدید');
-        $this->get(route('sheets.create'))->assertOk()->assertSee('شیت ماه جدید');
+        $this->get(route('dashboard'))->assertOk()->assertSee('لیست حقوق شهریور ۱۴۰۵')->assertDontSee('شیت');
+        $this->get(route('sheets.show', $this->sheet))->assertOk()->assertSee('آرش')->assertSee('بردیا')->assertSee('ستون جدید')
+            ->assertSee('data-col-grip', false)->assertDontSee('شیت');
+        $this->get(route('sheets.create'))->assertOk()->assertSee('لیست حقوق ماه جدید')->assertDontSee('شیت');
     }
 
     public function test_manager_can_open_create_members_and_projects(): void
@@ -47,7 +48,8 @@ class PagesTest extends TestCase
             ->assertOk()
             ->assertSee('آرش')
             ->assertDontSee('بردیا')
-            ->assertDontSee('ستون جدید');
+            ->assertDontSee('ستون جدید')
+            ->assertDontSee('data-col-grip', false);
 
         $this->actingAs($editor)->get(route('sheets.show', ['sheet' => $this->sheet, 'project' => $this->projectB->id]))
             ->assertOk()

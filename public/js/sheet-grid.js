@@ -6,6 +6,10 @@
  * - Arrow/Enter navigation (RTL aware), multi-cell paste from Excel.
  * - Fill handle: drag the small square at the corner of the active cell up or down to copy
  *   its value into that column (Ctrl+D copies the value of the cell above), like Excel.
+ * - Validation before saving: a number column's range (data-min/data-max on its <th>) and
+ *   number format are checked first; invalid input is never queued. The error shows under
+ *   the cell; Enter keeps the cell for correction, leaving it restores the saved value.
+ * - Managers reorder columns by dragging the grip in the column header.
  * - Number cells show thousands separators; raw value while editing.
  * - Pulls other users' edits every few seconds via $wire.changesSince.
  */
@@ -23,16 +27,25 @@ document.addEventListener('alpine:init', () => {
         infoTimer: null,
         handle: null,
         fill: null, // active drag: { source, col, r0, r1, value, pointer, targets }
+        bubble: null,
+        colDrag: null, // active column drag: { grip, th, id, target, before, pointer, moved }
 
         init() {
             const root = this.$refs.grid || this.$el;
             root.addEventListener('focusin', (e) => this.isCell(e.target) && this.onFocus(e.target));
             root.addEventListener('focusout', (e) => this.isCell(e.target) && this.onBlur(e.target));
             this.createHandle();
+            this.createBubble();
+            root.addEventListener('pointerdown', (e) => {
+                const grip = e.target.closest && e.target.closest('[data-col-grip]');
+                if (grip) this.startColumnDrag(e, grip);
+            });
             // A Livewire re-render drops the handle (it is not in the server HTML); put it back.
             window.Livewire?.hook?.('commit', ({ succeed }) => succeed(() => requestAnimationFrame(() => {
-                if (this.$el.isConnected && !this.fill && this.isFillable(document.activeElement)) {
-                    this.placeHandle(document.activeElement);
+                const active = document.activeElement;
+                if (this.$el.isConnected && !this.fill && this.isFillable(active)) this.placeHandle(active);
+                if (this.$el.isConnected && this.isCell(active) && active.classList.contains('is-error')) {
+                    this.showError(active, active.title);
                 }
             })));
             root.addEventListener('change', (e) => this.isCell(e.target) && this.queue(e.target));
@@ -43,7 +56,7 @@ document.addEventListener('alpine:init', () => {
                 this.pollTimer = setInterval(() => this.sync(), options.poll * 1000);
             }
             this._beforeUnload = (e) => {
-                if (this.hasPending()) {
+                if (this.hasPending() || this.openError()) {
                     e.preventDefault();
                     e.returnValue = '';
                 }
@@ -55,7 +68,9 @@ document.addEventListener('alpine:init', () => {
             clearInterval(this.pollTimer);
             window.removeEventListener('beforeunload', this._beforeUnload);
             this.cancelFill();
+            this.cancelColumnDrag();
             this.handle?.remove();
+            this.bubble?.remove();
         },
 
         isCell(el) {
@@ -95,6 +110,8 @@ document.addEventListener('alpine:init', () => {
             this.placeHandle(el);
         },
         onBlur(el) {
+            // Input that failed validation is never left on screen as if it were saved.
+            if (el.classList.contains('is-error')) this.revert(el, el.title);
             if (this.isNumber(el)) el.value = this.group(this.raw(el));
             // Focus may be moving to another cell; decide after it lands.
             setTimeout(() => {
@@ -110,13 +127,126 @@ document.addEventListener('alpine:init', () => {
             return String(value).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
         },
 
+        // ------------------------------------------------------------ validation
+
+        /** Exact comparison of two numeric strings (no float rounding), mirroring Digits::compare. */
+        compare(a, b) {
+            const canon = (v) => {
+                let [, sign, int, frac = ''] = String(v).match(/^(-?)(\d+)(?:\.(\d+))?$/) || [null, '', '0'];
+                int = int.replace(/^0+(?=\d)/, '');
+                frac = frac.replace(/0+$/, '');
+                return { neg: sign === '-' && (int !== '0' || frac !== ''), int, frac };
+            };
+            const x = canon(a);
+            const y = canon(b);
+            if (x.neg !== y.neg) return x.neg ? -1 : 1;
+            const len = Math.max(x.frac.length, y.frac.length);
+            const abs = x.int.length - y.int.length
+                || (x.int > y.int) - (x.int < y.int)
+                || (x.frac.padEnd(len, '0') > y.frac.padEnd(len, '0')) - (x.frac.padEnd(len, '0') < y.frac.padEnd(len, '0'));
+            const result = Math.sign(abs);
+            return x.neg ? -result : result;
+        },
+        rule(el) {
+            const root = this.$refs.grid || this.$el;
+            const th = el.dataset.col && root.querySelector(`thead th[data-column-id="${el.dataset.col}"]`);
+            return th ? th.dataset : {};
+        },
+        /** Validation message for the cell's current input, or null when it may be saved. */
+        validate(el) {
+            if (!this.isNumber(el)) return null;
+            const value = this.raw(el);
+            if (value === '') return null;
+            if (!/^-?\d+(\.\d+)?$/.test(value)) return 'در این ستون فقط عدد وارد کنید.';
+            const rule = this.rule(el);
+            const below = rule.min !== undefined && this.compare(value, rule.min) < 0;
+            const above = rule.max !== undefined && this.compare(value, rule.max) > 0;
+            return below || above ? rule.rangeMessage || 'این مقدار خارج از بازه‌ی مجاز است.' : null;
+        },
+        /** Refuses the input of a cell: in focus it stays for correction, otherwise it is undone. */
+        reject(el, message) {
+            delete this.pending[this.keyOf(el)];
+            el.classList.remove('is-dirty');
+            el.classList.add('is-error');
+            el.setAttribute('aria-invalid', 'true');
+            el.title = message;
+            this.status = 'error';
+            this.message = 'ذخیره نشد: ' + message;
+            if (document.activeElement === el) {
+                this.showError(el, message);
+            } else {
+                this.revert(el, message);
+            }
+        },
+        revert(el, message) {
+            const saved = el.dataset.saved ?? '';
+            this.clearError(el);
+            delete this.pending[this.keyOf(el)];
+            el.classList.remove('is-dirty');
+            this.show(el, saved);
+            el.classList.add('is-reverted');
+            setTimeout(() => el.classList.remove('is-reverted'), 1600);
+            this.status = 'error';
+            this.message = 'ذخیره نشد: ' + (message || 'مقدار نامعتبر بود') + ' مقدار قبلی برگشت.';
+        },
+        clearError(el) {
+            el.classList.remove('is-error');
+            el.removeAttribute('aria-invalid');
+            el.title = '';
+            if (this.bubble?.parentElement === el.closest('td')) this.hideError();
+        },
+        openError() {
+            const root = this.$refs.grid || this.$el;
+            return root.querySelector('input[data-cell].is-error');
+        },
+        createBubble() {
+            const bubble = document.createElement('div');
+            bubble.className = 'cell-error';
+            bubble.setAttribute('role', 'alert');
+            this.bubble = bubble;
+        },
+        showError(el, message) {
+            const td = el.closest('td');
+            if (!td || !this.bubble) return;
+            this.bubble.innerHTML = '';
+            const text = document.createElement('span');
+            text.textContent = message;
+            const hint = document.createElement('small');
+            hint.textContent = 'مقدار را اصلاح کنید و Enter بزنید؛ Esc مقدار قبلی را برمی‌گرداند.';
+            this.bubble.append(text, hint);
+            this.bubble.classList.remove('is-above');
+            if (this.bubble.parentElement !== td) {
+                this.hideError();
+                td.appendChild(this.bubble);
+            }
+            td.classList.add('error-host');
+            // Near the bottom of the grid, open upward so the footer does not cover it.
+            const root = this.$refs.grid || this.$el;
+            const foot = root.querySelector('tfoot')?.getBoundingClientRect().height || 0;
+            const limit = root.getBoundingClientRect().bottom - foot;
+            if (this.bubble.getBoundingClientRect().bottom > limit) this.bubble.classList.add('is-above');
+        },
+        hideError() {
+            this.bubble?.parentElement?.classList.remove('error-host');
+            this.bubble?.remove();
+        },
+
+        // ------------------------------------------------------------ saving
+
+        /** Queues a cell for saving after validating it. Returns false when the input was refused. */
         queue(el) {
+            const error = this.validate(el);
+            if (error) {
+                this.reject(el, error);
+                return false;
+            }
+            this.clearError(el);
             const value = this.raw(el);
             const key = this.keyOf(el);
             if (value === (el.dataset.saved ?? '')) {
                 delete this.pending[key];
                 el.classList.remove('is-dirty');
-                return;
+                return true;
             }
             this.pending[key] = {
                 row: Number(el.dataset.row),
@@ -126,10 +256,11 @@ document.addEventListener('alpine:init', () => {
                 version: el.dataset.version !== undefined ? Number(el.dataset.version) : null,
             };
             el.classList.add('is-dirty');
-            el.classList.remove('is-error', 'is-conflict');
+            el.classList.remove('is-conflict');
             this.status = 'dirty';
             clearTimeout(this.timer);
             this.timer = setTimeout(() => this.flush(), 400);
+            return true;
         },
 
         async flush() {
@@ -149,8 +280,13 @@ document.addEventListener('alpine:init', () => {
                 const res = await this.$wire.saveCells(batch);
                 this.apply(res);
                 const problems = res.errors.length + res.conflicts.length + res.denied.length;
-                this.status = problems ? 'error' : this.hasPendingOnly() ? 'dirty' : 'saved';
-                this.message = problems ? this.firstMessage(res) : '';
+                if (problems) {
+                    this.status = 'error';
+                    if (!this.message.startsWith('ذخیره نشد')) this.message = this.firstMessage(res);
+                } else if (!this.openError()) {
+                    this.status = this.hasPendingOnly() ? 'dirty' : 'saved';
+                    this.message = '';
+                }
                 if (res.structureChanged) this.$wire.$refresh();
                 if (this.hasPendingOnly()) {
                     clearTimeout(this.timer);
@@ -207,10 +343,9 @@ document.addEventListener('alpine:init', () => {
             });
             [...res.errors, ...res.denied].forEach((c) => {
                 const el = this.find(c);
-                if (!el) return;
-                el.classList.remove('is-dirty');
-                el.classList.add('is-error');
-                el.title = c.message;
+                // Skip cells the user has typed into again since this batch was sent.
+                if (!el || this.pending[this.keyOf(el)] !== undefined) return;
+                this.reject(el, c.message);
             });
         },
 
@@ -221,7 +356,7 @@ document.addEventListener('alpine:init', () => {
                 this.lastSync = res.now;
                 res.cells.forEach((c) => {
                     const el = this.find(c);
-                    if (!el || el === document.activeElement || el.classList.contains('is-dirty')) return;
+                    if (!el || el === document.activeElement || el.classList.contains('is-dirty') || el.classList.contains('is-error')) return;
                     if (Number(el.dataset.version || 0) >= c.version) return;
                     el.dataset.version = c.version;
                     el.dataset.saved = c.value ?? '';
@@ -248,6 +383,14 @@ document.addEventListener('alpine:init', () => {
             if (this.fill && e.key === 'Escape') {
                 e.preventDefault();
                 this.cancelFill();
+                return;
+            }
+            if (e.key === 'Escape' && el.classList.contains('is-error')) {
+                e.preventDefault();
+                this.revert(el, el.title);
+                this.status = this.hasPendingOnly() ? 'dirty' : 'saved';
+                this.message = '';
+                el.select();
                 return;
             }
             // Ctrl+D (any keyboard layout): copy the value of the nearest editable cell above.
@@ -286,7 +429,11 @@ document.addEventListener('alpine:init', () => {
             const root = this.$refs.grid || this.$el;
             const next = root.querySelector(`input[data-cell][data-r="${target[0]}"][data-c="${target[1]}"]`);
             e.preventDefault();
-            if (e.key === 'Enter') this.queue(el);
+            // Like Excel: invalid input keeps the cell (and shows why) instead of moving on.
+            if (!this.queue(el)) {
+                el.select();
+                return;
+            }
             if (next) next.focus();
         },
 
@@ -338,8 +485,8 @@ document.addEventListener('alpine:init', () => {
             const source = td && td.querySelector('input[data-cell]');
             if (!source || e.button > 0) return;
             e.preventDefault();
+            if (!this.queue(source)) return; // commit what is typed in the source first; refuse invalid input
             this.handle.setPointerCapture(e.pointerId);
-            this.queue(source); // commit what is typed in the source first
 
             this.fill = {
                 source,
@@ -436,17 +583,154 @@ document.addEventListener('alpine:init', () => {
             const lines = text.replace(/\r/g, '').replace(/\n$/, '').split('\n');
             const r0 = Number(el.dataset.r);
             const c0 = Number(el.dataset.c);
+            const refused = [];
             lines.forEach((line, dr) => {
                 line.split('\t').forEach((value, dc) => {
                     const target = root.querySelector(`input[data-cell][data-r="${r0 + dr}"][data-c="${c0 + dc}"]`);
                     if (!target) return;
                     target.value = value.trim();
-                    this.queue(target);
+                    const error = this.validate(target);
+                    if (!this.queue(target)) {
+                        refused.push(error);
+                        return;
+                    }
                     if (target !== document.activeElement && this.isNumber(target)) {
                         target.value = this.group(this.raw(target));
                     }
                 });
             });
+            if (refused.length > 1) {
+                this.message = `${this.toPersian(refused.length)} مقدار ذخیره نشد؛ ${refused.filter(Boolean)[0] || ''}`;
+            }
+        },
+
+        // ------------------------------------------------------------ column order (managers)
+
+        startColumnDrag(e, grip) {
+            const th = grip.closest('th[data-column-id]');
+            if (!th || e.button > 0 || this.colDrag) return;
+            e.preventDefault();
+            grip.setPointerCapture(e.pointerId);
+            const move = (ev) => this.moveColumnDrag(ev);
+            const up = () => this.endColumnDrag();
+            const cancel = () => this.cancelColumnDrag();
+            const key = (ev) => ev.key === 'Escape' && this.cancelColumnDrag();
+            grip.addEventListener('pointermove', move);
+            grip.addEventListener('pointerup', up);
+            grip.addEventListener('pointercancel', cancel);
+            window.addEventListener('keydown', key);
+            this.colDrag = {
+                grip,
+                th,
+                id: th.dataset.columnId,
+                target: null,
+                before: false,
+                start: e.clientX,
+                pointer: { x: e.clientX, y: e.clientY },
+                moved: false,
+                frame: requestAnimationFrame(() => this.autoScrollColumns()),
+                unbind: () => {
+                    grip.removeEventListener('pointermove', move);
+                    grip.removeEventListener('pointerup', up);
+                    grip.removeEventListener('pointercancel', cancel);
+                    window.removeEventListener('keydown', key);
+                },
+            };
+            th.classList.add('is-col-dragging');
+            this.$el.classList.add('is-moving-column');
+        },
+        moveColumnDrag(e) {
+            if (!this.colDrag) return;
+            this.colDrag.pointer = { x: e.clientX, y: e.clientY };
+            if (Math.abs(e.clientX - this.colDrag.start) > 4) this.colDrag.moved = true;
+            this.updateColumnTarget();
+        },
+        columnHeaders() {
+            const root = this.$refs.grid || this.$el;
+            return [...root.querySelectorAll('thead th[data-column-id]')];
+        },
+        /** Horizontal span where movable columns are visible (the frozen name columns cover the rest). */
+        movableArea() {
+            const root = this.$refs.grid || this.$el;
+            const box = root.getBoundingClientRect();
+            const frozen = root.querySelector('thead .sticky-3')?.getBoundingClientRect();
+            const rtl = getComputedStyle(root).direction === 'rtl';
+            if (!frozen) return { left: box.left, right: box.right, rtl };
+            return rtl ? { left: box.left, right: frozen.left, rtl } : { left: frozen.right, right: box.right, rtl };
+        },
+        updateColumnTarget() {
+            const drag = this.colDrag;
+            if (!drag || !drag.moved) return;
+            const area = this.movableArea();
+            const x = Math.min(Math.max(drag.pointer.x, area.left + 1), area.right - 1);
+            const headers = this.columnHeaders();
+            let target = headers.find((th) => {
+                const r = th.getBoundingClientRect();
+                return x >= r.left && x <= r.right;
+            });
+            if (!target) return;
+            const r = target.getBoundingClientRect();
+            const firstHalf = area.rtl ? x > r.left + r.width / 2 : x < r.left + r.width / 2;
+            headers.forEach((th) => th.classList.remove('drop-before', 'drop-after'));
+            drag.target = target === drag.th ? null : target;
+            drag.before = firstHalf;
+            if (drag.target) target.classList.add(firstHalf ? 'drop-before' : 'drop-after');
+        },
+        autoScrollColumns() {
+            const drag = this.colDrag;
+            if (!drag) return;
+            if (drag.moved) {
+                const root = this.$refs.grid || this.$el;
+                const area = this.movableArea();
+                const edge = 48;
+                const x = drag.pointer.x;
+                let step = 0;
+                if (x < area.left + edge) step = -Math.min(24, (area.left + edge - x) / 2 + 4);
+                else if (x > area.right - edge) step = Math.min(24, (x - (area.right - edge)) / 2 + 4);
+                if (step) {
+                    root.scrollLeft += step;
+                    this.updateColumnTarget();
+                }
+            }
+            drag.frame = requestAnimationFrame(() => this.autoScrollColumns());
+        },
+        clearColumnDrag() {
+            const drag = this.colDrag;
+            cancelAnimationFrame(drag.frame);
+            drag.unbind();
+            drag.th.classList.remove('is-col-dragging');
+            this.columnHeaders().forEach((th) => th.classList.remove('drop-before', 'drop-after'));
+            this.$el.classList.remove('is-moving-column');
+            this.colDrag = null;
+            return drag;
+        },
+        cancelColumnDrag() {
+            if (this.colDrag) this.clearColumnDrag();
+        },
+        async endColumnDrag() {
+            if (!this.colDrag) return;
+            const drag = this.clearColumnDrag();
+            if (!drag.moved || !drag.target) return;
+
+            const ids = this.columnHeaders().map((th) => th.dataset.columnId);
+            const order = ids.filter((id) => id !== drag.id);
+            const at = order.indexOf(drag.target.dataset.columnId) + (drag.before ? 0 : 1);
+            order.splice(at, 0, drag.id);
+            if (order.join(',') === ids.join(',')) return;
+
+            this.notify('در حال ذخیره‌ی ترتیب ستون‌ها…');
+            await this.settle(); // unsaved cells first, so the re-render cannot drop them
+            this.$wire.reorderColumns(order.map(Number));
+        },
+        /** Waits (up to ~6s) until queued cell edits are saved. */
+        async settle() {
+            for (let i = 0; i < 60 && this.hasPending(); i++) {
+                if (!this.saving && this.hasPendingOnly()) {
+                    clearTimeout(this.timer);
+                    this.flush();
+                }
+                await new Promise((resolve) => setTimeout(resolve, 100));
+            }
         },
     }));
 });
