@@ -61,6 +61,16 @@
                 <span>ستون‌های بدون مقدار هم چاپ شوند <span class="text-zinc-500">({{ Digits::toPersian($emptyColumns->count()) }} ستون)</span></span>
             </label>
         @endif
+        <label class="flex items-center gap-2">
+            <input type="hidden" name="timeline" value="0">
+            <input type="checkbox" name="timeline" value="1" class="size-4 accent-accent" @checked($showTimeline) onchange="this.form.submit()">
+            <span>روند تایید</span>
+        </label>
+        <label class="flex items-center gap-2" title="فقط کامنت‌هایی که تیک «در چاپ» دارند">
+            <input type="hidden" name="comments" value="0">
+            <input type="checkbox" name="comments" value="1" class="size-4 accent-accent" @checked($showComments) onchange="this.form.submit()">
+            <span>کامنت‌های لیست</span>
+        </label>
         <noscript><button type="submit" class="btn btn-sm">اعمال</button></noscript>
         <span class="text-zinc-500">
             @if ($partCount > 1)
@@ -139,25 +149,45 @@
                         <p class="mt-2 text-[10px] text-zinc-500">ستون‌هایی که در این گزارش برای همه خالی یا صفر بودند چاپ نشده‌اند: {{ $emptyColumns->pluck('title')->map(fn ($t) => "«{$t}»")->join('، ') }}.</p>
                     @endif
 
-                    <div class="mt-5 grid grid-cols-2 gap-3 text-[11px] lg:grid-cols-3" style="break-inside: avoid">
-                        @foreach ($sheetProjects as $sp)
-                            <div class="rounded-lg border border-zinc-200 p-3">
-                                <div class="mb-1.5 font-bold">{{ $sp->project->name }} · {{ $sp->stage->label() }}</div>
-                                @forelse ($sp->approvals->whereNull('revoked_at') as $approval)
-                                    <div class="leading-6">
-                                        {{ $approval->stage->actionLabel() }}: <b>{{ $approval->user?->nameWithTitle() }}</b>
-                                        · {{ Jalali::formatLong($approval->created_at) }} {{ Digits::toPersian($approval->created_at->format('H:i')) }}
-                                        @if (! hash_equals($approval->data_hash, $hashes[$sp->id] ?? ''))
-                                            · <span class="font-semibold text-orange-700">تغییر پس از تایید</span>
-                                        @endif
-                                    </div>
-                                @empty
-                                    <div class="text-zinc-500">هنوز تایید نشده است.</div>
-                                @endforelse
-                            </div>
-                        @endforeach
-                    </div>
-                    <p class="mt-3 text-[10px] text-zinc-400">هر تایید با کد پیامکی ثبت و به نسخه دقیق داده‌ها (SHA-256) متصل است.</p>
+                    @php
+                        $historyProjects = $sheetProjects->filter(fn ($sp) => ($showTimeline && ! empty($timelines[$sp->id])) || ($showComments && isset($printComments[$sp->id]) && $printComments[$sp->id]->isNotEmpty()));
+                    @endphp
+                    @if ($historyProjects->isNotEmpty())
+                        <div class="mt-5 grid grid-cols-2 gap-3 text-[11px]">
+                            @foreach ($historyProjects as $sp)
+                                <div class="rounded-lg border border-zinc-200 p-3" style="break-inside: avoid">
+                                    <div class="mb-1.5 font-bold">{{ $sp->project->name }} · {{ $sp->stage->label() }}</div>
+                                    @if ($showTimeline && ! empty($timelines[$sp->id]))
+                                        <ol class="space-y-0.5">
+                                            @foreach ($timelines[$sp->id] as $event)
+                                                <li class="leading-5">
+                                                    <span class="num text-zinc-500">{{ Jalali::formatLong($event['at']) }} {{ Digits::toPersian($event['at']->format('H:i')) }}</span>
+                                                    — <b>{{ $event['by'] ?? 'سیستم' }}</b> {{ $event['text'] }}@if ($event['detail']) ({{ $event['detail'] }})@endif
+                                                    @if ($event['revoked']) · <span class="text-zinc-500">باطل‌شده</span> @endif
+                                                    @if ($event['changed']) · <span class="font-semibold text-orange-700">تغییر پس از تایید</span> @endif
+                                                </li>
+                                            @endforeach
+                                        </ol>
+                                    @endif
+                                    @if ($showComments && isset($printComments[$sp->id]) && $printComments[$sp->id]->isNotEmpty())
+                                        <div @class(['mb-1 font-semibold', 'mt-2 border-t border-zinc-100 pt-1.5' => $showTimeline && ! empty($timelines[$sp->id])])>کامنت‌ها</div>
+                                        <ul class="space-y-1">
+                                            @foreach ($printComments[$sp->id] as $comment)
+                                                <li class="leading-5">
+                                                    <b>{{ $comment->user?->nameWithTitle() }}</b>
+                                                    <span class="text-zinc-500">· {{ Jalali::formatLong($comment->created_at) }} {{ Digits::toPersian($comment->created_at->format('H:i')) }}</span>:
+                                                    <span class="whitespace-pre-line">{{ $comment->body }}</span>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                    @if ($showTimeline)
+                        <p class="mt-3 text-[10px] text-zinc-400">هر تایید با کد پیامکی ثبت و به نسخه دقیق داده‌ها (SHA-256) متصل است.</p>
+                    @endif
                 @endif
             </section>
         @endforeach

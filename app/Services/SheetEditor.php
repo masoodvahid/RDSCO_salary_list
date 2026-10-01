@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\ColumnType;
 use App\Enums\ReviewStatus;
 use App\Enums\Stage;
+use App\Models\ListComment;
 use App\Models\Project;
 use App\Models\Sheet;
 use App\Models\SheetCell;
@@ -548,9 +549,11 @@ final class SheetEditor
         $removing = $current->keys()->map(fn ($id) => (int) $id)->diff($wanted);
         foreach ($removing as $projectId) {
             $sheetProject = $current->get($projectId);
-            if ($sheetProject->stage !== Stage::Draft || SheetRow::where('sheet_id', $sheet->id)->where('project_id', $projectId)->exists()) {
+            if ($sheetProject->stage !== Stage::Draft
+                || SheetRow::where('sheet_id', $sheet->id)->where('project_id', $projectId)->exists()
+                || ListComment::where('sheet_project_id', $sheetProject->id)->exists()) {
                 $name = Project::find($projectId)?->name;
-                throw ValidationException::withMessages(['monthProjects' => "پروژه «{$name}» ردیف یا تایید دارد و نمی‌تواند از این ماه حذف شود."]);
+                throw ValidationException::withMessages(['monthProjects' => "پروژه «{$name}» ردیف، تایید یا کامنت دارد و نمی‌تواند از این ماه حذف شود."]);
             }
         }
 

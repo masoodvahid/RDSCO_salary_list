@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\Role;
 use App\Enums\Stage;
+use App\Models\ListComment;
 use App\Models\Note;
 use App\Models\Sheet;
 use App\Models\SheetColumn;
@@ -173,6 +174,25 @@ final class SheetAccess
     public function canNote(User $user, SheetRow $row): bool
     {
         return $user->is_active && $this->canViewRow($user, $row);
+    }
+
+    /** Everyone who sees a project's list may comment on it, at any stage. */
+    public function canComment(User $user, SheetProject $sheetProject): bool
+    {
+        return $user->is_active && $this->canViewProject($user, (int) $sheetProject->project_id);
+    }
+
+    /** The author (while they can still see the list) or a manager decides whether a comment is printed. */
+    public function canSetCommentPrint(User $user, ListComment $comment, SheetProject $sheetProject): bool
+    {
+        return $this->canManage($user)
+            || ((int) $comment->user_id === (int) $user->id && $this->canComment($user, $sheetProject));
+    }
+
+    /** As with row notes, only managers delete comments; the text stays in the change log. */
+    public function canDeleteComment(User $user, ListComment $comment): bool
+    {
+        return $this->canManage($user);
     }
 
     /** Only managers remove notes (rejection reasons included); the removal stays in the change log. */

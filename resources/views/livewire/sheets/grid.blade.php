@@ -336,6 +336,78 @@
                 </tfoot>
             @endif
         </table>
+
+        {{-- ============ Approval timeline and list comments (stays in view when the grid scrolls sideways) ============ --}}
+        <section class="no-print sticky right-0 w-full border-t border-line bg-canvas px-4 py-5 sm:px-6" aria-label="روند تایید و کامنت‌های لیست">
+            @if ($currentSp)
+                <div class="grid max-w-6xl gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+                    <div class="card self-start p-4">
+                        <h2 class="mb-3 flex flex-wrap items-center gap-2 text-sm font-bold">روند تایید لیست {{ $currentSp->project->name }} <x-stage-badge :stage="$currentSp->stage" /></h2>
+                        <ol class="space-y-3 border-s-2 border-line ps-4">
+                            @forelse ($timeline as $event)
+                                <li class="relative text-[13px] leading-6">
+                                    <span class="absolute -start-[23px] top-1.5 size-2.5 rounded-full ring-4 ring-white {{ $event['tone'] }}" aria-hidden="true"></span>
+                                    <div @class(['opacity-60' => $event['revoked']])>
+                                        <b class="font-semibold">{{ $event['by'] ?? 'سیستم' }}</b> {{ $event['text'] }}
+                                        @if ($event['revoked']) <span class="chip bg-zinc-100 text-zinc-600 ring-zinc-200">باطل‌شده</span> @endif
+                                        @if ($event['changed']) <span class="chip bg-orange-50 text-orange-800 ring-orange-200">تغییر پس از تایید</span> @endif
+                                    </div>
+                                    <div class="text-xs text-ink-soft">{{ Jalali::formatLong($event['at']) }}، ساعت {{ Digits::toPersian($event['at']->format('H:i')) }}@if ($event['detail']) · {{ $event['detail'] }}@endif</div>
+                                </li>
+                            @empty
+                                <li class="text-[13px] text-ink-soft">هنوز رویدادی ثبت نشده است.</li>
+                            @endforelse
+                        </ol>
+                    </div>
+
+                    <div class="card self-start p-4">
+                        <h2 class="mb-3 text-sm font-bold">کامنت‌های لیست <span class="font-normal text-ink-soft">({{ Digits::toPersian($listComments->count()) }})</span></h2>
+                        <ul class="space-y-2.5">
+                            @forelse ($listComments as $comment)
+                                <li wire:key="comment-{{ $comment->id }}" class="rounded-xl bg-canvas px-3 py-2.5">
+                                    <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-ink-soft">
+                                        <span><b class="text-[13px] font-semibold text-ink">{{ $comment->user?->nameWithTitle() ?? 'کاربر حذف‌شده' }}</b> · {{ Jalali::formatLong($comment->created_at) }}، ساعت {{ Digits::toPersian($comment->created_at->format('H:i')) }}</span>
+                                        <span class="flex items-center gap-3">
+                                            @if ($access->canSetCommentPrint($user, $comment, $currentSp))
+                                                <label class="inline-flex cursor-pointer items-center gap-1.5" title="این کامنت پایین برگه‌ی چاپی هم بیاید">
+                                                    <input type="checkbox" class="size-3.5 accent-accent" @checked($comment->in_print) wire:click="setCommentPrint({{ $comment->id }}, {{ $comment->in_print ? 'false' : 'true' }})">
+                                                    در چاپ
+                                                </label>
+                                            @elseif ($comment->in_print)
+                                                <span class="chip bg-white text-ink-soft ring-line-strong">در چاپ</span>
+                                            @endif
+                                            @if ($isManager)
+                                                <button type="button" wire:click="deleteComment({{ $comment->id }})" wire:confirm="این کامنت حذف شود؟ متن آن در گزارش تغییرات می‌ماند." class="text-red-700 hover:underline">حذف</button>
+                                            @endif
+                                        </span>
+                                    </div>
+                                    <p class="mt-1 text-[13px] leading-6 whitespace-pre-line">{{ $comment->body }}</p>
+                                </li>
+                            @empty
+                                <li class="py-3 text-center text-[13px] text-ink-soft">هنوز کامنتی برای این لیست ثبت نشده است.</li>
+                            @endforelse
+                        </ul>
+
+                        @if ($canComment)
+                            <form wire:submit="addComment" class="mt-3 space-y-2">
+                                <label for="comment-body" class="sr-only">کامنت روی کل لیست</label>
+                                <textarea id="comment-body" wire:model="commentBody" rows="2" maxlength="2000" class="input h-auto py-2 leading-6" placeholder="کامنت شما درباره‌ی کل لیست این پروژه…"></textarea>
+                                @error('commentBody') <p class="error">{{ $message }}</p> @enderror
+                                <div class="flex flex-wrap items-center justify-between gap-3">
+                                    <label class="inline-flex cursor-pointer items-center gap-2 text-[13px]">
+                                        <input type="checkbox" wire:model="commentInPrint" class="size-4 accent-accent">
+                                        در چاپ هم نمایش داده شود
+                                    </label>
+                                    <button type="submit" class="btn btn-primary btn-sm" wire:loading.attr="disabled" wire:target="addComment">ثبت کامنت</button>
+                                </div>
+                            </form>
+                        @endif
+                    </div>
+                </div>
+            @elseif ($this->visibleProjects->isNotEmpty())
+                <p class="text-[13px] text-ink-soft">برای دیدن روند تایید و کامنت‌های لیست، یک پروژه را از فیلتر بالا انتخاب کنید.</p>
+            @endif
+        </section>
     </div>
 
     {{-- ============ Status bar ============ --}}

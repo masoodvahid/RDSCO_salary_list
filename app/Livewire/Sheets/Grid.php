@@ -4,6 +4,7 @@ namespace App\Livewire\Sheets;
 
 use App\Enums\ReviewStatus;
 use App\Enums\Stage;
+use App\Models\ListComment;
 use App\Models\Note;
 use App\Models\OtpChallenge;
 use App\Models\Project;
@@ -14,6 +15,7 @@ use App\Models\SheetProject;
 use App\Models\SheetRow;
 use App\Models\User;
 use App\Services\ApprovalService;
+use App\Services\ListHistory;
 use App\Services\PersonnelImporter;
 use App\Services\ReviewService;
 use App\Services\SheetAccess;
@@ -69,6 +71,11 @@ class Grid extends Component
     public string $rejectNote = '';
 
     public string $newNote = '';
+
+    /** New comment on the whole list of the selected project. */
+    public string $commentBody = '';
+
+    public bool $commentInPrint = false;
 
     public string $otpCode = '';
 
@@ -201,6 +208,8 @@ class Grid extends Component
             SheetRow::where('sheet_id', $this->sheetId)->selectRaw('count(*) as c, max(updated_at) as u')->first()?->toArray(),
             SheetProject::where('sheet_id', $this->sheetId)->selectRaw('count(*) as c, max(updated_at) as u')->first()?->toArray(),
             Note::where('sheet_id', $this->sheetId)->count(),
+            ListComment::whereIn('sheet_project_id', SheetProject::where('sheet_id', $this->sheetId)->select('id'))
+                ->selectRaw('count(*) as c, max(updated_at) as u')->first()?->toArray(),
             $this->sheet->deadline_at?->timestamp,
         ];
 
@@ -413,6 +422,35 @@ class Grid extends Component
         $reviews->addNote($this->user(), $this->findRow((int) $this->targetId), $this->newNote);
         $this->newNote = '';
         $this->refreshData();
+    }
+
+    // ---------------------------------------------------------------- list comments
+
+    public function addComment(ListHistory $history): void
+    {
+        $sheetProject = $this->currentSheetProject;
+        abort_unless($sheetProject, 404);
+        $history->addComment($this->user(), $sheetProject, $this->commentBody, $this->commentInPrint);
+        $this->reset(['commentBody', 'commentInPrint']);
+        $this->flash('کامنت ثبت شد.');
+    }
+
+    public function setCommentPrint(ListHistory $history, int $commentId, bool $inPrint): void
+    {
+        $history->setCommentPrint($this->user(), $this->findComment($commentId), $inPrint);
+    }
+
+    public function deleteComment(ListHistory $history, int $commentId): void
+    {
+        $history->deleteComment($this->user(), $this->findComment($commentId));
+        $this->flash('کامنت حذف شد.');
+    }
+
+    private function findComment(int $commentId): ListComment
+    {
+        return ListComment::whereKey($commentId)
+            ->whereIn('sheet_project_id', SheetProject::where('sheet_id', $this->sheetId)->select('id'))
+            ->firstOrFail();
     }
 
     public function deleteNote(ReviewService $reviews, int $noteId): void
@@ -638,6 +676,15 @@ class Grid extends Component
             }
         }
 
+        // Approval timeline and comments of the selected project's list (shown under the grid).
+        $timeline = [];
+        $listComments = collect();
+        if ($current) {
+            $history = app(ListHistory::class);
+            $timeline = $history->timelines($sheet, collect([$current]), $currentHash ? [$current->id => $currentHash] : [])[$current->id];
+            $listComments = $history->comments(collect([$current]))[$current->id];
+        }
+
         $modalData = [];
         if ($this->modal === 'notes' && $this->targetId) {
             $modalData['notesRow'] = SheetRow::where('sheet_id', $this->sheetId)->with('notes.user')->find($this->targetId);
@@ -671,6 +718,9 @@ class Grid extends Component
             'canSubmit' => $current !== null && $access->canSubmit($user, $sheet, $current),
             'approvals' => $approvals,
             'currentHash' => $currentHash,
+            'timeline' => $timeline,
+            'listComments' => $listComments,
+            'canComment' => $current !== null && $access->canComment($user, $current),
             'totals' => $this->totals($rows, $columns),
             'unassignedCount' => $access->canManage($user) ? SheetRow::where('sheet_id', $this->sheetId)->whereNull('project_id')->count() : 0,
             'gridConfig' => [
