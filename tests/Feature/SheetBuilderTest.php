@@ -28,7 +28,8 @@ class SheetBuilderTest extends TestCase
 
         $this->assertSame([1405, 7, 14], Jalali::fromCarbon($sheet->deadline_at));
         $this->assertSame('23:59:59', $sheet->deadline_at->format('H:i:s'));
-        $this->assertSame(count(SheetBuilder::DEFAULT_COLUMNS), SheetColumn::where('sheet_id', $sheet->id)->count());
+        // Only the built-in personnel fields; payroll columns come from Excel or are added by hand.
+        $this->assertSame(0, SheetColumn::where('sheet_id', $sheet->id)->count());
         $this->assertSame(1, $sheet->sheetProjects()->count());
         $this->assertSame('شهریور ۱۴۰۵', $sheet->title());
 
@@ -43,8 +44,8 @@ class SheetBuilderTest extends TestCase
         $builder = app(SheetBuilder::class);
         $previous = $builder->create($manager, 1405, 5);
 
-        $locked = SheetColumn::where('sheet_id', $previous->id)->where('is_locked', true)->first();
-        $open = SheetColumn::where('sheet_id', $previous->id)->where('is_locked', false)->where('type', 'number')->first();
+        $locked = SheetColumn::create(['sheet_id' => $previous->id, 'title' => 'حقوق پایه', 'type' => 'number', 'is_locked' => true, 'position' => 1]);
+        $open = SheetColumn::create(['sheet_id' => $previous->id, 'title' => 'اضافه‌کار', 'type' => 'number', 'is_locked' => false, 'position' => 2]);
         $row = SheetRow::create([
             'sheet_id' => $previous->id, 'project_id' => $project->id, 'first_name' => 'علی', 'last_name' => 'رضایی',
             'national_code' => NationalCode::fromNineDigits('001245876'), 'position' => 1,

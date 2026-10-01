@@ -18,28 +18,39 @@ class UserFactory extends Factory
             'name' => fake()->name(),
             'mobile' => '09'.fake()->unique()->numerify('#########'),
             'role' => Role::Viewer,
-            'project_id' => null,
             'is_active' => true,
         ];
     }
 
     public function manager(): static
     {
-        return $this->state(['role' => Role::Manager, 'project_id' => null]);
+        return $this->state(['role' => Role::Manager]);
     }
 
-    public function editor(Project $project): static
+    /** At least one project: an editor always works within projects. */
+    public function editor(Project $project, Project ...$more): static
     {
-        return $this->state(['role' => Role::Editor, 'project_id' => $project->id]);
+        return $this->state(['role' => Role::Editor])->inProjects($project, ...$more);
     }
 
-    public function approver(?Project $project = null): static
+    /** No project = finance (final stage) approver. */
+    public function approver(Project ...$projects): static
     {
-        return $this->state(['role' => Role::Approver, 'project_id' => $project?->id]);
+        return $this->state(['role' => Role::Approver])->inProjects(...$projects);
     }
 
-    public function viewer(?Project $project = null): static
+    /** No project = sees every project. */
+    public function viewer(Project ...$projects): static
     {
-        return $this->state(['role' => Role::Viewer, 'project_id' => $project?->id]);
+        return $this->state(['role' => Role::Viewer])->inProjects(...$projects);
+    }
+
+    public function inProjects(Project ...$projects): static
+    {
+        if ($projects === []) {
+            return $this;
+        }
+
+        return $this->afterCreating(fn (User $user) => $user->syncProjects(array_map(fn (Project $p) => $p->id, $projects)));
     }
 }

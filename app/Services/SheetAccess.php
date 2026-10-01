@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\Role;
 use App\Enums\Stage;
+use App\Models\ListComment;
 use App\Models\Note;
 use App\Models\Sheet;
 use App\Models\SheetColumn;
@@ -19,8 +20,8 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * Roles (each includes the one before it):
  *  - viewer:   see rows in scope, add notes
- *  - editor:   + edit unlocked cells of own project while the project is in Draft and before the deadline
- *  - approver: + approve. Scoped to a project → project approval. All projects → finance (final) approval + record review
+ *  - editor:   + edit unlocked cells of own projects while the project is in Draft and before the deadline
+ *  - approver: + approve. Scoped to projects → project approval of each. All projects → finance (final) approval + record review
  *  - manager:  everything (structure, locked cells, rows, members, HR approval, record review, reopen)
  */
 final class SheetAccess
@@ -33,7 +34,13 @@ final class SheetAccess
     /** @return list<int>|null null means every project */
     public function projectScope(User $user): ?array
     {
-        return $user->hasAllProjects() ? null : [(int) $user->project_id];
+        return $user->hasAllProjects() ? null : $user->projectIds();
+    }
+
+    /** The user is assigned to this project (managers and all-project users are not "members" of one). */
+    public function isMemberOf(User $user, ?int $projectId): bool
+    {
+        return $projectId !== null && in_array($projectId, $user->projectIds(), true);
     }
 
     public function canViewRow(User $user, SheetRow $row): bool
@@ -83,14 +90,31 @@ final class SheetAccess
             return $stage !== Stage::Final;
         }
 
-        if (! in_array($user->role, [Role::Editor, Role::Approver], true) || $user->project_id === null) {
+        if (! in_array($user->role, [Role::Editor, Role::Approver], true)) {
             return false;
         }
 
-        return (int) $row->project_id === (int) $user->project_id
+        return $this->isMemberOf($user, $row->project_id === null ? null : (int) $row->project_id)
             && ! $column->is_locked
             && $stage === Stage::Draft
             && ! $sheet->isPastDeadline($now);
+    }
+
+    /**
+     * Editors and project approvers may fill their open columns from an Excel file while at least one
+     * of their projects is still in Draft and the deadline has not passed (managers use the full import).
+     */
+    public function canImportValues(User $user, Sheet $sheet, ?CarbonInterface $now = null): bool
+    {
+        if (! $user->is_active || ! in_array($user->role, [Role::Editor, Role::Approver], true) || $sheet->isPastDeadline($now)) {
+            return false;
+        }
+        $projectIds = $user->projectIds();
+
+        return $projectIds !== [] && SheetProject::where('sheet_id', $sheet->id)
+            ->whereIn('project_id', $projectIds)
+            ->where('stage', Stage::Draft->value)
+            ->exists();
     }
 
     public function canEditIdentity(User $user, ?SheetProject $sheetProject): bool
@@ -121,8 +145,8 @@ final class SheetAccess
         $stage = $sheetProject->stage;
 
         return match (true) {
-            $user->role === Role::Approver && $user->project_id !== null
-                && (int) $user->project_id === (int) $sheetProject->project_id
+            $user->role === Role::Approver
+                && $this->isMemberOf($user, (int) $sheetProject->project_id)
                 && $stage === Stage::Draft => Stage::ProjectApproved,
             $user->role === Role::Manager
                 && in_array($stage, [Stage::Draft, Stage::ProjectApproved], true) => Stage::HrApproved,
@@ -142,8 +166,7 @@ final class SheetAccess
     {
         return $user->is_active
             && in_array($user->role, [Role::Editor, Role::Approver], true)
-            && $user->project_id !== null
-            && (int) $user->project_id === (int) $sheetProject->project_id
+            && $this->isMemberOf($user, (int) $sheetProject->project_id)
             && $sheetProject->stage === Stage::Draft
             && ! $sheet->isPastDeadline();
     }
@@ -151,6 +174,25 @@ final class SheetAccess
     public function canNote(User $user, SheetRow $row): bool
     {
         return $user->is_active && $this->canViewRow($user, $row);
+    }
+
+    /** Everyone who sees a project's list may comment on it, at any stage. */
+    public function canComment(User $user, SheetProject $sheetProject): bool
+    {
+        return $user->is_active && $this->canViewProject($user, (int) $sheetProject->project_id);
+    }
+
+    /** The author (while they can still see the list) or a manager decides whether a comment is printed. */
+    public function canSetCommentPrint(User $user, ListComment $comment, SheetProject $sheetProject): bool
+    {
+        return $this->canManage($user)
+            || ((int) $comment->user_id === (int) $user->id && $this->canComment($user, $sheetProject));
+    }
+
+    /** As with row notes, only managers delete comments; the text stays in the change log. */
+    public function canDeleteComment(User $user, ListComment $comment): bool
+    {
+        return $this->canManage($user);
     }
 
     /** Only managers remove notes (rejection reasons included); the removal stays in the change log. */

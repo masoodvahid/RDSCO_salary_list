@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\ColumnType;
 use App\Enums\ReviewStatus;
 use App\Enums\Stage;
+use App\Models\ListComment;
 use App\Models\Project;
 use App\Models\Sheet;
 use App\Models\SheetCell;
@@ -52,9 +53,16 @@ final class SheetEditor
         $rowIds = array_values(array_unique(array_map(fn ($c) => (int) ($c['row'] ?? 0), $changes)));
         $rows = SheetRow::where('sheet_id', $sheet->id)->whereIn('id', $rowIds)->get()->keyBy('id');
         $columns = SheetColumn::where('sheet_id', $sheet->id)->get()->keyBy('id');
-        $sheetProjects = SheetProject::where('sheet_id', $sheet->id)->get()->keyBy('project_id');
 
-        DB::transaction(function () use ($user, $sheet, $changes, $rows, $columns, $sheetProjects, &$result) {
+        DB::transaction(function () use ($user, $sheet, $changes, $rows, $columns, &$result) {
+            // Lock the lists this batch touches: an approval waits for these edits (and signs them),
+            // or, if it came first, the stage read here is already the approved one.
+            $sheetProjects = SheetProject::where('sheet_id', $sheet->id)
+                ->whereIn('project_id', $rows->pluck('project_id')->filter()->unique()->values())
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('project_id');
+
             foreach ($changes as $change) {
                 $key = [
                     'row' => (int) ($change['row'] ?? 0),
@@ -212,7 +220,8 @@ final class SheetEditor
         $result['saved'][] = $key + ['value' => $stored, 'version' => 0];
     }
 
-    private function resetRejectedReview(User $user, Sheet $sheet, SheetRow $row): void
+    /** A value change on a rejected record sends it back for review (also used by the Excel import). */
+    public function resetRejectedReview(User $user, Sheet $sheet, SheetRow $row): void
     {
         if ($row->review_status !== ReviewStatus::Rejected) {
             return;
@@ -540,9 +549,11 @@ final class SheetEditor
         $removing = $current->keys()->map(fn ($id) => (int) $id)->diff($wanted);
         foreach ($removing as $projectId) {
             $sheetProject = $current->get($projectId);
-            if ($sheetProject->stage !== Stage::Draft || SheetRow::where('sheet_id', $sheet->id)->where('project_id', $projectId)->exists()) {
+            if ($sheetProject->stage !== Stage::Draft
+                || SheetRow::where('sheet_id', $sheet->id)->where('project_id', $projectId)->exists()
+                || ListComment::where('sheet_project_id', $sheetProject->id)->exists()) {
                 $name = Project::find($projectId)?->name;
-                throw ValidationException::withMessages(['monthProjects' => "پروژه «{$name}» ردیف یا تایید دارد و نمی‌تواند از این ماه حذف شود."]);
+                throw ValidationException::withMessages(['monthProjects' => "پروژه «{$name}» ردیف، تایید یا کامنت دارد و نمی‌تواند از این ماه حذف شود."]);
             }
         }
 

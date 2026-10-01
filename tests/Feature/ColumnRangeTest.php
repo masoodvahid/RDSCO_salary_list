@@ -111,7 +111,7 @@ class ColumnRangeTest extends TestCase
             app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'csv');
             $this->fail('Import should fail.');
         } catch (ValidationException $e) {
-            $this->assertStringContainsString('بین ۰ و ۱۲۰', $e->errors()['importFile'][0]);
+            $this->assertStringContainsString('بین ۰ و ۱۲۰', $e->errors()['importRows'][0]);
         }
 
         $next = app(SheetBuilder::class)->create($this->manager, 1405, 7, $this->sheet);

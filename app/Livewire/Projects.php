@@ -4,7 +4,6 @@ namespace App\Livewire;
 
 use App\Models\Project;
 use App\Models\SheetProject;
-use App\Models\User;
 use App\Services\SheetAccess;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
@@ -32,12 +31,11 @@ class Projects extends Component
     #[Computed]
     public function projects()
     {
-        return Project::orderByDesc('is_active')->orderBy('name')->get()->map(function (Project $project) {
-            $project->setAttribute('members_count', User::where('project_id', $project->id)->where('is_active', true)->count());
-            $project->setAttribute('months_count', SheetProject::where('project_id', $project->id)->count());
-
-            return $project;
-        });
+        return Project::query()
+            ->withCount(['users as members_count' => fn ($q) => $q->where('users.is_active', true)])
+            ->addSelect(['months_count' => SheetProject::selectRaw('count(*)')->whereColumn('sheet_projects.project_id', 'projects.id')])
+            ->orderByDesc('is_active')->orderBy('name')
+            ->get();
     }
 
     public function add(): void

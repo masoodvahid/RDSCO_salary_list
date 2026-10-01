@@ -1,6 +1,7 @@
 @php
     use App\Enums\ColumnType;
     use App\Enums\ReviewStatus;
+    use App\Enums\Role;
     use App\Enums\Stage;
     use App\Support\Digits;
     use App\Support\Jalali;
@@ -65,6 +66,10 @@
                     <button type="button" wire:click="openRow" class="btn">{!! $plusIcon !!} ردیف جدید</button>
                     <button type="button" wire:click="openProjects" class="btn">پروژه‌های این ماه <span class="rounded-full bg-accent-soft px-1.5 text-xs font-bold text-accent">{{ Digits::toPersian($sheetProjects->count()) }}</span></button>
                 @endif
+                @if ($importMode === 'values')
+                    <span class="mx-1 hidden h-6 w-px bg-line sm:block" aria-hidden="true"></span>
+                    <button type="button" wire:click="openImport" class="btn">ورود مقادیر از اکسل</button>
+                @endif
                 <span class="mx-1 hidden h-6 w-px bg-line sm:block" aria-hidden="true"></span>
                 <a href="{{ route('sheets.export', ['sheet' => $sheet->id, 'project' => $this->currentProjectId()]) }}" class="btn btn-ghost text-emerald-700 hover:bg-emerald-50">خروجی اکسل</a>
                 <a href="{{ route('sheets.print', ['sheet' => $sheet->id, 'project' => $this->currentProjectId()]) }}" target="_blank" class="btn btn-ghost text-ink-soft">چاپ / PDF</a>
@@ -73,9 +78,9 @@
 
         <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
             <div role="group" aria-label="فیلتر پروژه" class="flex flex-wrap items-center gap-1.5">
-                @if ($user->hasAllProjects())
+                @if ($user->hasAllProjects() || $this->visibleProjects->count() > 1)
                     <button type="button" wire:click="filterProject(null)" aria-pressed="{{ $projectFilter === null ? 'true' : 'false' }}"
-                        @class(['h-8 rounded-full border px-3 text-[13px]', 'border-accent bg-accent font-semibold text-white' => $projectFilter === null, 'border-line-strong bg-white text-ink hover:border-accent/40 hover:bg-accent-soft' => $projectFilter !== null])>همه پروژه‌ها</button>
+                        @class(['h-8 rounded-full border px-3 text-[13px]', 'border-accent bg-accent font-semibold text-white' => $projectFilter === null, 'border-line-strong bg-white text-ink hover:border-accent/40 hover:bg-accent-soft' => $projectFilter !== null])>{{ $user->hasAllProjects() ? 'همه پروژه‌ها' : 'همه‌ی پروژه‌های من' }}</button>
                     @foreach ($this->visibleProjects as $sp)
                         @php $active = (string) $projectFilter === (string) $sp->project_id; @endphp
                         <button type="button" wire:key="filter-{{ $sp->id }}" wire:click="filterProject({{ $sp->project_id }})" aria-pressed="{{ $active ? 'true' : 'false' }}"
@@ -89,8 +94,13 @@
                         <button type="button" wire:click="filterProject('none')"
                             @class(['h-8 rounded-full border px-3 text-[13px]', 'border-amber-600 bg-amber-600 font-semibold text-white' => $projectFilter === 'none', 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100' => $projectFilter !== 'none'])>بدون پروژه <b class="font-bold">{{ Digits::toPersian($unassignedCount) }}</b></button>
                     @endif
+                    @if (! $user->hasAllProjects() && ! $currentSp && $user->role !== Role::Viewer)
+                        <span class="ms-1 text-xs text-ink-soft">برای ارسال یا تایید، پروژه را انتخاب کنید.</span>
+                    @endif
+                @elseif ($this->visibleProjects->isNotEmpty())
+                    <span class="text-sm text-ink-soft">شما فقط پرسنل پروژه <b class="text-ink">{{ $this->visibleProjects->first()->project->name }}</b> را می‌بینید.</span>
                 @else
-                    <span class="text-sm text-ink-soft">شما فقط پرسنل پروژه <b class="text-ink">{{ $user->project?->name }}</b> را می‌بینید.</span>
+                    <span class="text-sm text-ink-soft">پروژه‌ی شما ({{ $user->scopeLabel() }}) در لیست این ماه نیست.</span>
                 @endif
             </div>
             <div class="flex items-center gap-2">
@@ -326,6 +336,78 @@
                 </tfoot>
             @endif
         </table>
+
+        {{-- ============ Approval timeline and list comments (stays in view when the grid scrolls sideways) ============ --}}
+        <section class="no-print sticky right-0 w-full border-t border-line bg-canvas px-4 py-5 sm:px-6" aria-label="روند تایید و کامنت‌های لیست">
+            @if ($currentSp)
+                <div class="grid max-w-6xl gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+                    <div class="card self-start p-4">
+                        <h2 class="mb-3 flex flex-wrap items-center gap-2 text-sm font-bold">روند تایید لیست {{ $currentSp->project->name }} <x-stage-badge :stage="$currentSp->stage" /></h2>
+                        <ol class="space-y-3 border-s-2 border-line ps-4">
+                            @forelse ($timeline as $event)
+                                <li class="relative text-[13px] leading-6">
+                                    <span class="absolute -start-[23px] top-1.5 size-2.5 rounded-full ring-4 ring-white {{ $event['tone'] }}" aria-hidden="true"></span>
+                                    <div @class(['opacity-60' => $event['revoked']])>
+                                        <b class="font-semibold">{{ $event['by'] ?? 'سیستم' }}</b> {{ $event['text'] }}
+                                        @if ($event['revoked']) <span class="chip bg-zinc-100 text-zinc-600 ring-zinc-200">باطل‌شده</span> @endif
+                                        @if ($event['changed']) <span class="chip bg-orange-50 text-orange-800 ring-orange-200">تغییر پس از تایید</span> @endif
+                                    </div>
+                                    <div class="text-xs text-ink-soft">{{ Jalali::formatLong($event['at']) }}، ساعت {{ Digits::toPersian($event['at']->format('H:i')) }}@if ($event['detail']) · {{ $event['detail'] }}@endif</div>
+                                </li>
+                            @empty
+                                <li class="text-[13px] text-ink-soft">هنوز رویدادی ثبت نشده است.</li>
+                            @endforelse
+                        </ol>
+                    </div>
+
+                    <div class="card self-start p-4">
+                        <h2 class="mb-3 text-sm font-bold">کامنت‌های لیست <span class="font-normal text-ink-soft">({{ Digits::toPersian($listComments->count()) }})</span></h2>
+                        <ul class="space-y-2.5">
+                            @forelse ($listComments as $comment)
+                                <li wire:key="comment-{{ $comment->id }}" class="rounded-xl bg-canvas px-3 py-2.5">
+                                    <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-ink-soft">
+                                        <span><b class="text-[13px] font-semibold text-ink">{{ $comment->user?->nameWithTitle() ?? 'کاربر حذف‌شده' }}</b> · {{ Jalali::formatLong($comment->created_at) }}، ساعت {{ Digits::toPersian($comment->created_at->format('H:i')) }}</span>
+                                        <span class="flex items-center gap-3">
+                                            @if ($access->canSetCommentPrint($user, $comment, $currentSp))
+                                                <label class="inline-flex cursor-pointer items-center gap-1.5" title="این کامنت پایین برگه‌ی چاپی هم بیاید">
+                                                    <input type="checkbox" class="size-3.5 accent-accent" @checked($comment->in_print) wire:click="setCommentPrint({{ $comment->id }}, {{ $comment->in_print ? 'false' : 'true' }})">
+                                                    در چاپ
+                                                </label>
+                                            @elseif ($comment->in_print)
+                                                <span class="chip bg-white text-ink-soft ring-line-strong">در چاپ</span>
+                                            @endif
+                                            @if ($isManager)
+                                                <button type="button" wire:click="deleteComment({{ $comment->id }})" wire:confirm="این کامنت حذف شود؟ متن آن در گزارش تغییرات می‌ماند." class="text-red-700 hover:underline">حذف</button>
+                                            @endif
+                                        </span>
+                                    </div>
+                                    <p class="mt-1 text-[13px] leading-6 whitespace-pre-line">{{ $comment->body }}</p>
+                                </li>
+                            @empty
+                                <li class="py-3 text-center text-[13px] text-ink-soft">هنوز کامنتی برای این لیست ثبت نشده است.</li>
+                            @endforelse
+                        </ul>
+
+                        @if ($canComment)
+                            <form wire:submit="addComment" class="mt-3 space-y-2">
+                                <label for="comment-body" class="sr-only">کامنت روی کل لیست</label>
+                                <textarea id="comment-body" wire:model="commentBody" rows="2" maxlength="2000" class="input h-auto py-2 leading-6" placeholder="کامنت شما درباره‌ی کل لیست این پروژه…"></textarea>
+                                @error('commentBody') <p class="error">{{ $message }}</p> @enderror
+                                <div class="flex flex-wrap items-center justify-between gap-3">
+                                    <label class="inline-flex cursor-pointer items-center gap-2 text-[13px]">
+                                        <input type="checkbox" wire:model="commentInPrint" class="size-4 accent-accent">
+                                        در چاپ هم نمایش داده شود
+                                    </label>
+                                    <button type="submit" class="btn btn-primary btn-sm" wire:loading.attr="disabled" wire:target="addComment">ثبت کامنت</button>
+                                </div>
+                            </form>
+                        @endif
+                    </div>
+                </div>
+            @elseif ($this->visibleProjects->isNotEmpty())
+                <p class="text-[13px] text-ink-soft">برای دیدن روند تایید و کامنت‌های لیست، یک پروژه را از فیلتر بالا انتخاب کنید.</p>
+            @endif
+        </section>
     </div>
 
     {{-- ============ Status bar ============ --}}
@@ -623,26 +705,98 @@
     @endif
 
     @if ($modal === 'import')
-        <x-modal title="ورود پرسنل از اکسل" close="closeModal">
-            @if ($importResult)
+        @php $valuesMode = $importMode === 'values'; @endphp
+        <x-modal :title="$valuesMode ? 'ورود مقادیر از اکسل' : 'ورود پرسنل از اکسل'" close="closeModal" width="max-w-2xl">
+            @if ($importResult && ($importResult['mode'] ?? 'full') === 'values')
+                @php
+                    $r = $importResult;
+                    $yourProjects = ($r['manyProjects'] ?? false) ? 'پروژه‌های شما' : 'پروژه‌ی شما';
+                @endphp
+                <div class="space-y-3 text-sm leading-7">
+                    <div class="rounded-xl bg-emerald-50 px-4 py-3 text-emerald-900">
+                        @if ($r['cells'])
+                            {{ Digits::toPersian($r['cells']) }} خانه در {{ Digits::toPersian($r['rows']) }} ردیف به‌روزرسانی شد.
+                        @elseif ($r['matched'])
+                            مقادیر فایل با لیست یکسان بود؛ چیزی تغییر نکرد.
+                        @else
+                            هیچ ردیفی از فایل وارد نشد.
+                        @endif
+                        <span class="text-emerald-900/75">({{ Digits::toPersian($r['matched']) }} نفر از فایل با {{ $yourProjects }} تطبیق داده شد.)</span>
+                    </div>
+
+                    @if ($r['unknown'])
+                        <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950" x-data="{ copied: false }">
+                            <p class="font-semibold">این {{ Digits::toPersian(count($r['unknown'])) }} کد ملی در {{ $yourProjects }} تعریف نشده‌اند و وارد نشدند:</p>
+                            <ul class="mt-2 max-h-48 space-y-0.5 overflow-y-auto rounded-lg bg-white/70 px-3 py-2 text-[13px]" x-ref="unknown">
+                                @foreach ($r['unknown'] as $item)
+                                    <li><span class="num font-semibold" dir="ltr">{{ $item['code'] }}</span>@if ($item['name'] !== '') <span class="text-amber-900/80">— {{ $item['name'] }}</span>@endif <span class="text-xs text-amber-900/60">(سطر {{ Digits::toPersian($item['line']) }})</span></li>
+                                @endforeach
+                            </ul>
+                            <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                <p class="text-[13px]">لطفاً از مدیر بخواهید ابتدا این کد ملی‌ها را به {{ $yourProjects }} تخصیص دهد، بعد فایل را دوباره وارد کنید.</p>
+                                <button type="button" class="btn btn-sm" data-unknown-codes="{{ collect($r['unknown'])->map(fn ($i) => trim($i['code'].' '.$i['name']))->join("\n") }}"
+                                        x-on:click="navigator.clipboard.writeText($el.dataset.unknownCodes); copied = true; setTimeout(() => copied = false, 2000)">
+                                    <span x-show="!copied">کپی فهرست</span><span x-show="copied" x-cloak>کپی شد</span>
+                                </button>
+                            </div>
+                        </div>
+                    @endif
+
+                    @if ($r['closedProjects'])
+                        <p class="rounded-xl bg-zinc-50 px-4 py-2.5 text-[13px] text-ink-soft">لیست {{ collect($r['closedProjects'])->map(fn ($n) => 'پروژه '.$n)->join('، ') }} تایید شده و دیگر قابل ویرایش نیست؛ ردیف‌های آن وارد نشدند.</p>
+                    @endif
+                    @if ($r['lockedColumns'] || $r['unknownColumns'] || $r['ignoredFields'])
+                        <ul class="list-disc space-y-1 rounded-xl bg-zinc-50 py-2.5 pe-4 ps-8 text-[13px] text-ink-soft">
+                            @if ($r['lockedColumns'])
+                                <li>ستون‌های قفل (فقط مدیر) نادیده گرفته شد: {{ collect($r['lockedColumns'])->map(fn ($t) => "«{$t}»")->join('، ') }}</li>
+                            @endif
+                            @if ($r['unknownColumns'])
+                                <li>این ستون‌ها در لیست حقوق نیستند و نادیده گرفته شد: {{ collect($r['unknownColumns'])->map(fn ($t) => "«{$t}»")->join('، ') }}</li>
+                            @endif
+                            @if ($r['ignoredFields'])
+                                <li>{{ collect($r['ignoredFields'])->map(fn ($t) => "«{$t}»")->join(' و ') }} فقط برای اطلاع خوانده شد؛ اطلاعات پرسنلی را فقط مدیر تغییر می‌دهد.</li>
+                            @endif
+                        </ul>
+                    @endif
+                </div>
+            @elseif ($importResult)
                 <div class="rounded-xl bg-emerald-50 px-4 py-3 text-sm leading-7 text-emerald-900">
                     {{ Digits::toPersian($importResult['created']) }} ردیف جدید و {{ Digits::toPersian($importResult['updated']) }} ردیف به‌روزرسانی شد.
                     @if ($importResult['columns']) {{ Digits::toPersian($importResult['columns']) }} ستون جدید هم ساخته شد. @endif
                 </div>
             @else
                 <form wire:submit="import" id="import-form" class="space-y-3">
-                    <p class="text-[13px] leading-6 text-ink-soft">
-                        سطر اول فایل عنوان ستون‌هاست. لازم: <b>نام</b>، <b>نام خانوادگی</b>، <b>کد ملی</b>. اختیاری: <b>کد پرسنلی</b>، <b>پروژه</b>.
-                        ستون‌های دیگر با ستون هم‌نام در لیست حقوق پر می‌شوند یا ستون تازه می‌سازند. پرسنل موجود (بر اساس کد ملی) به‌روزرسانی می‌شوند.
-                    </p>
+                    @if ($valuesMode)
+                        @php $openTitles = $columns->where('is_locked', false)->pluck('title'); @endphp
+                        <div class="space-y-1.5 text-[13px] leading-6 text-ink-soft">
+                            <p>فایل باید ستون <b class="text-ink">کد ملی</b> داشته باشد؛ هر سطر با همین کد به پرسنل پروژه‌ی شما وصل می‌شود. کد ملی‌هایی که در پروژه‌ی شما نیستند وارد نمی‌شوند و در پایان فهرستشان را می‌بینید.</p>
+                            <p>بقیه‌ی ستون‌ها با عنوان ستون‌های لیست حقوق تطبیق داده می‌شوند. ستون‌هایی که شما می‌توانید پر کنید:
+                                @if ($openTitles->isEmpty()) <span>(ستون بازی وجود ندارد)</span> @else {!! $openTitles->map(fn ($t) => '<b class="text-ink">'.e($t).'</b>')->join('، ') !!}. @endif
+                            </p>
+                            <p>نام و اطلاعات پرسنلی تغییر نمی‌کند. خانه‌ی خالی در فایل، مقدار همان خانه را پاک می‌کند. ساده‌ترین راه: «خروجی اکسل» بگیرید، پر کنید و همان را وارد کنید.</p>
+                        </div>
+                    @else
+                        <p class="text-[13px] leading-6 text-ink-soft">
+                            سطر اول فایل عنوان ستون‌هاست. لازم: <b>نام</b>، <b>نام خانوادگی</b>، <b>کد ملی</b>. اختیاری: <b>کد پرسنلی</b>، <b>پروژه</b>.
+                            ستون‌های دیگر با ستون هم‌نام در لیست حقوق پر می‌شوند یا ستون تازه می‌سازند. پرسنل موجود (بر اساس کد ملی) به‌روزرسانی می‌شوند. فایل «خروجی اکسل» همین صفحه را هم می‌شود دوباره وارد کرد.
+                        </p>
+                    @endif
                     <input type="file" wire:model="importFile" accept=".xlsx,.csv" class="block w-full rounded-lg border border-dashed border-line-strong p-3 text-sm file:me-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-2 file:text-white">
                     <div wire:loading wire:target="importFile" class="text-xs text-ink-soft">در حال بارگذاری…</div>
-                    @if ($errors->has('importFile'))
-                        <ul class="error list-disc space-y-0.5 ps-5">
+                    <div wire:loading wire:target="import" class="text-xs text-ink-soft">در حال بررسی فایل…</div>
+                    @if ($errors->has('importFile') || $errors->has('importRows'))
+                        <div class="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-[13px] leading-6 text-red-800" role="alert">
                             @foreach ($errors->get('importFile') as $message)
-                                <li>{{ $message }}</li>
+                                <p @class(['font-semibold' => $loop->first])>{{ $message }}</p>
                             @endforeach
-                        </ul>
+                            @if ($errors->has('importRows'))
+                                <ul class="mt-2 max-h-64 list-disc space-y-1 overflow-y-auto ps-5">
+                                    @foreach ($errors->get('importRows') as $message)
+                                        <li>{{ $message }}</li>
+                                    @endforeach
+                                </ul>
+                            @endif
+                        </div>
                     @endif
                 </form>
             @endif

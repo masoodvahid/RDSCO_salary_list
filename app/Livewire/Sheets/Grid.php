@@ -4,6 +4,7 @@ namespace App\Livewire\Sheets;
 
 use App\Enums\ReviewStatus;
 use App\Enums\Stage;
+use App\Models\ListComment;
 use App\Models\Note;
 use App\Models\OtpChallenge;
 use App\Models\Project;
@@ -14,6 +15,7 @@ use App\Models\SheetProject;
 use App\Models\SheetRow;
 use App\Models\User;
 use App\Services\ApprovalService;
+use App\Services\ListHistory;
 use App\Services\PersonnelImporter;
 use App\Services\ReviewService;
 use App\Services\SheetAccess;
@@ -36,7 +38,7 @@ class Grid extends Component
     #[Locked]
     public int $sheetId;
 
-    /** Project id, 'none' for rows without a project, or null for all (managers/all-project users). */
+    /** Project id, 'none' for rows without a project (all-project users), or null for every project the user sees. */
     #[Url(as: 'project')]
     public $projectFilter = null;
 
@@ -70,6 +72,11 @@ class Grid extends Component
 
     public string $newNote = '';
 
+    /** New comment on the whole list of the selected project. */
+    public string $commentBody = '';
+
+    public bool $commentInPrint = false;
+
     public string $otpCode = '';
 
     #[Locked]
@@ -96,9 +103,8 @@ class Grid extends Component
         $user = $this->user();
         abort_unless($this->access()->canView($user), 403);
 
-        if (! $user->hasAllProjects()) {
-            $this->projectFilter = $user->project_id;
-        }
+        // A member of a single project always works in it; members of several start on "all my projects".
+        $this->projectFilter = $this->currentProjectId() ?? ($this->projectFilter === 'none' && $user->hasAllProjects() ? 'none' : null);
     }
 
     // ---------------------------------------------------------------- data
@@ -139,14 +145,15 @@ class Grid extends Component
 
     public function currentProjectId(): ?int
     {
-        $user = $this->user();
-        if (! $user->hasAllProjects()) {
-            return (int) $user->project_id;
+        $id = is_numeric($this->projectFilter) ? (int) $this->projectFilter : null;
+        if ($id && $this->visibleProjects->has($id)) {
+            return $id;
+        }
+        if (! $this->user()->hasAllProjects() && $this->visibleProjects->count() === 1) {
+            return (int) $this->visibleProjects->keys()->first();
         }
 
-        $id = is_numeric($this->projectFilter) ? (int) $this->projectFilter : null;
-
-        return $id && $this->sheetProjects->has($id) ? $id : null;
+        return null;
     }
 
     #[Computed]
@@ -201,6 +208,8 @@ class Grid extends Component
             SheetRow::where('sheet_id', $this->sheetId)->selectRaw('count(*) as c, max(updated_at) as u')->first()?->toArray(),
             SheetProject::where('sheet_id', $this->sheetId)->selectRaw('count(*) as c, max(updated_at) as u')->first()?->toArray(),
             Note::where('sheet_id', $this->sheetId)->count(),
+            ListComment::whereIn('sheet_project_id', SheetProject::where('sheet_id', $this->sheetId)->select('id'))
+                ->selectRaw('count(*) as c, max(updated_at) as u')->first()?->toArray(),
             $this->sheet->deadline_at?->timestamp,
         ];
 
@@ -244,10 +253,20 @@ class Grid extends Component
 
     public function filterProject($projectId): void
     {
-        if (! $this->user()->hasAllProjects()) {
-            return;
+        $user = $this->user();
+        if ($projectId === 'none') {
+            if (! $user->hasAllProjects()) {
+                return;
+            }
+            $this->projectFilter = 'none';
+        } elseif (is_numeric($projectId)) {
+            if (! $this->access()->canViewProject($user, (int) $projectId)) {
+                return;
+            }
+            $this->projectFilter = (int) $projectId;
+        } else {
+            $this->projectFilter = null;
         }
-        $this->projectFilter = $projectId === 'none' ? 'none' : (is_numeric($projectId) ? (int) $projectId : null);
         $this->refreshData();
     }
 
@@ -405,6 +424,36 @@ class Grid extends Component
         $this->refreshData();
     }
 
+    // ---------------------------------------------------------------- list comments
+
+    public function addComment(ListHistory $history): void
+    {
+        $this->resetErrorBag('commentBody');
+        $sheetProject = $this->currentSheetProject;
+        abort_unless($sheetProject, 404);
+        $history->addComment($this->user(), $sheetProject, $this->commentBody, $this->commentInPrint);
+        $this->reset(['commentBody', 'commentInPrint']);
+        $this->flash('کامنت ثبت شد.');
+    }
+
+    public function setCommentPrint(ListHistory $history, int $commentId, bool $inPrint): void
+    {
+        $history->setCommentPrint($this->user(), $this->findComment($commentId), $inPrint);
+    }
+
+    public function deleteComment(ListHistory $history, int $commentId): void
+    {
+        $history->deleteComment($this->user(), $this->findComment($commentId));
+        $this->flash('کامنت حذف شد.');
+    }
+
+    private function findComment(int $commentId): ListComment
+    {
+        return ListComment::whereKey($commentId)
+            ->whereIn('sheet_project_id', SheetProject::where('sheet_id', $this->sheetId)->select('id'))
+            ->firstOrFail();
+    }
+
     public function deleteNote(ReviewService $reviews, int $noteId): void
     {
         $row = $this->findRow((int) $this->targetId);
@@ -507,16 +556,17 @@ class Grid extends Component
         $this->flash('مهلت تکمیل تغییر کرد.');
     }
 
-    public function openImport(): void
+    public function openImport(PersonnelImporter $importer): void
     {
-        $this->authorizeManage();
+        abort_unless($importer->mode($this->user(), $this->sheet) !== null, 403);
         $this->closeModal();
         $this->modal = 'import';
     }
 
     public function import(PersonnelImporter $importer): void
     {
-        $this->authorizeManage();
+        abort_unless($importer->mode($this->user(), $this->sheet) !== null, 403);
+        $this->resetErrorBag(['importFile', 'importRows']); // messages of the previous file
         $this->validate(
             ['importFile' => ['required', 'file', 'max:5120', 'extensions:xlsx,csv,txt']],
             [
@@ -628,6 +678,15 @@ class Grid extends Component
             }
         }
 
+        // Approval timeline and comments of the selected project's list (shown under the grid).
+        $timeline = [];
+        $listComments = collect();
+        if ($current) {
+            $history = app(ListHistory::class);
+            $timeline = $history->timelines($sheet, collect([$current]), $currentHash ? [$current->id => $currentHash] : [])[$current->id];
+            $listComments = $history->comments(collect([$current]))[$current->id];
+        }
+
         $modalData = [];
         if ($this->modal === 'notes' && $this->targetId) {
             $modalData['notesRow'] = SheetRow::where('sheet_id', $this->sheetId)->with('notes.user')->find($this->targetId);
@@ -654,12 +713,16 @@ class Grid extends Component
             'columns' => $columns,
             'sheetProjects' => $this->sheetProjects,
             'isManager' => $access->canManage($user),
+            'importMode' => app(PersonnelImporter::class)->mode($user, $sheet),
             'currentSp' => $current,
             'approvalTarget' => $current ? $access->approvalTarget($user, $current) : null,
             'canReopen' => $current !== null && $access->canReopen($user, $current),
             'canSubmit' => $current !== null && $access->canSubmit($user, $sheet, $current),
             'approvals' => $approvals,
             'currentHash' => $currentHash,
+            'timeline' => $timeline,
+            'listComments' => $listComments,
+            'canComment' => $current !== null && $access->canComment($user, $current),
             'totals' => $this->totals($rows, $columns),
             'unassignedCount' => $access->canManage($user) ? SheetRow::where('sheet_id', $this->sheetId)->whereNull('project_id')->count() : 0,
             'gridConfig' => [

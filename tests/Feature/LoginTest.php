@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Livewire\Auth\Login;
+use App\Livewire\Members;
 use App\Models\User;
+use App\Models\UserLog;
 use App\Services\InviteService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -34,6 +36,10 @@ class LoginTest extends TestCase
 
         $this->assertAuthenticatedAs($user);
         $this->assertSame('tukahr-login', $this->sms->sent[0]['template']);
+        $this->assertSame(['login'], UserLog::where('user_id', $user->id)->pluck('action')->all());
+
+        $this->post(route('logout'))->assertRedirect(route('login'));
+        $this->assertSame(['login', 'logout'], UserLog::where('user_id', $user->id)->orderBy('id')->pluck('action')->all());
     }
 
     public function test_unknown_or_inactive_numbers_get_no_code(): void
@@ -54,6 +60,26 @@ class LoginTest extends TestCase
 
         $component->set('code', $right === '000000' ? '111111' : '000000')->call('verify')->assertHasErrors('code');
         $this->assertGuest();
+        $this->assertSame('کد واردشده درست نیست.', UserLog::where('action', 'login.failed')->firstOrFail()->meta['reason']);
+    }
+
+    public function test_a_code_sent_to_the_old_number_stops_working_when_the_number_changes(): void
+    {
+        $member = User::factory()->viewer()->create(['mobile' => '09121112233']);
+        $component = Livewire::test(Login::class)->set('mobile', '09121112233')->call('sendCode');
+        $code = $this->sms->lastCodeFor('09121112233');
+
+        Livewire::actingAs(User::factory()->manager()->create())
+            ->test(Members::class)
+            ->call('startEdit', $member->id)
+            ->set('editMobile', '09129998877')
+            ->call('saveEdit')
+            ->assertHasNoErrors();
+        auth()->logout();
+
+        $component->set('code', $code)->call('verify')->assertHasErrors('code');
+        $this->assertGuest();
+        $this->assertSame('09129998877', $member->fresh()->mobile);
     }
 
     public function test_invite_link_prefills_the_invitee(): void

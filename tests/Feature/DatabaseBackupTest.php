@@ -60,8 +60,10 @@ class DatabaseBackupTest extends TestCase
             $this->assertSame(DB::table('users')->count(), $restored->table('users')->count());
             $this->assertSame($tricky, $restored->table('sheet_cells')->where('id', $cell->id)->value('value'));
             $this->assertSame('مدیر "داخلی" پروژه', $restored->table('users')->where('id', $approver->id)->value('job_title'));
-            // The stored generated column is recomputed by MySQL.
-            $this->assertEquals($this->projectA->id, $restored->table('users')->where('id', $approver->id)->value('approver_project_key'));
+            // Project membership and the approver slot come back too.
+            $this->assertEquals($this->projectA->id, $restored->table('project_user')->where('user_id', $approver->id)->value('approver_key'));
+            // The legacy stored generated column is skipped by the dump and recomputed by MySQL.
+            $this->assertTrue(Schema::connection('restore')->hasColumn('users', 'approver_project_key'));
         } finally {
             DB::purge('restore');
             $admin->statement("DROP DATABASE IF EXISTS `{$name}`");

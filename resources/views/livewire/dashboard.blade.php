@@ -12,6 +12,7 @@
         'stage.submit' => 'لیست را برای تایید فرستاد',
         'row.review' => 'یک رکورد را بررسی کرد',
         'sheet.import' => 'فایل اکسل وارد کرد',
+        'sheet.import.values' => 'مقادیر را از فایل اکسل وارد کرد',
         'sheet.create' => 'لیست حقوق ماه را ساخت',
     ];
     $activityTone = [
