@@ -75,6 +75,7 @@ class MultiProjectAccessTest extends TestCase
         $grid = Livewire::actingAs($editor)
             ->test(Grid::class, ['sheet' => $this->sheet])
             ->assertSet('projectFilter', null)
+            ->assertSee('id="project-filter"', false)
             ->assertSee('همه‌ی پروژه‌های من')
             ->assertSee('برای ارسال یا تایید، پروژه را انتخاب کنید.');
         $this->assertEqualsCanonicalizing([$this->rowA->id, $this->rowB->id], $grid->instance()->rows()->pluck('id')->all());

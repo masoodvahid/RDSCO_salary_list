@@ -77,25 +77,24 @@
         </div>
 
         <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <div role="group" aria-label="فیلتر پروژه" class="flex flex-wrap items-center gap-1.5">
+            <div class="flex flex-wrap items-center gap-2">
                 @if ($user->hasAllProjects() || $this->visibleProjects->count() > 1)
-                    <button type="button" wire:click="filterProject(null)" aria-pressed="{{ $projectFilter === null ? 'true' : 'false' }}"
-                        @class(['h-8 rounded-full border px-3 text-[13px]', 'border-accent bg-accent font-semibold text-white' => $projectFilter === null, 'border-line-strong bg-white text-ink hover:border-accent/40 hover:bg-accent-soft' => $projectFilter !== null])>{{ $user->hasAllProjects() ? 'همه پروژه‌ها' : 'همه‌ی پروژه‌های من' }}</button>
-                    @foreach ($this->visibleProjects as $sp)
-                        @php $active = (string) $projectFilter === (string) $sp->project_id; @endphp
-                        <button type="button" wire:key="filter-{{ $sp->id }}" wire:click="filterProject({{ $sp->project_id }})" aria-pressed="{{ $active ? 'true' : 'false' }}"
-                            @class(['flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px]', 'border-accent bg-accent font-semibold text-white' => $active, 'border-line-strong bg-white text-ink hover:border-accent/40 hover:bg-accent-soft' => ! $active])
-                            title="{{ $sp->stage->label() }}">
-                            <span @class(['size-2 rounded-full', $sp->stage->dotClass(), 'ring-2 ring-white/80' => $active]) aria-hidden="true"></span>
-                            {{ $sp->project->name }}
-                        </button>
-                    @endforeach
-                    @if ($isManager && $unassignedCount)
-                        <button type="button" wire:click="filterProject('none')"
-                            @class(['h-8 rounded-full border px-3 text-[13px]', 'border-amber-600 bg-amber-600 font-semibold text-white' => $projectFilter === 'none', 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100' => $projectFilter !== 'none'])>بدون پروژه <b class="font-bold">{{ Digits::toPersian($unassignedCount) }}</b></button>
+                    @php
+                        $filterOptions = [['value' => null, 'label' => $user->hasAllProjects() ? 'همه پروژه‌ها' : 'همه‌ی پروژه‌های من']];
+                        foreach ($this->visibleProjects as $sp) {
+                            $filterOptions[] = ['value' => (int) $sp->project_id, 'label' => $sp->project->name, 'hint' => $sp->stage->label(), 'dot' => $sp->stage->dotClass()];
+                        }
+                        if ($isManager && $unassignedCount) {
+                            $filterOptions[] = ['value' => 'none', 'label' => 'بدون پروژه', 'hint' => Digits::toPersian($unassignedCount).' نفر', 'dot' => 'bg-amber-500'];
+                        }
+                    @endphp
+                    <label for="project-filter" class="text-[13px] text-ink-soft">پروژه</label>
+                    <x-project-picker id="project-filter" class="w-72 max-w-full" size="sm" action="filterProject" :selected="$projectFilter" :options="$filterOptions" />
+                    @if ($isManager && $unassignedCount && $projectFilter !== 'none')
+                        <button type="button" wire:click="filterProject('none')" class="chip bg-amber-50 text-amber-900 ring-amber-200 hover:bg-amber-100">{{ Digits::toPersian($unassignedCount) }} نفر بدون پروژه</button>
                     @endif
                     @if (! $user->hasAllProjects() && ! $currentSp && $user->role !== Role::Viewer)
-                        <span class="ms-1 text-xs text-ink-soft">برای ارسال یا تایید، پروژه را انتخاب کنید.</span>
+                        <span class="text-xs text-ink-soft">برای ارسال یا تایید، پروژه را انتخاب کنید.</span>
                     @endif
                 @elseif ($this->visibleProjects->isNotEmpty())
                     <span class="text-sm text-ink-soft">شما فقط پرسنل پروژه <b class="text-ink">{{ $this->visibleProjects->first()->project->name }}</b> را می‌بینید.</span>
@@ -671,15 +670,9 @@
         <x-modal title="پروژه‌های {{ $sheet->title() }}" close="closeModal">
             <form wire:submit="saveProjects" id="projects-form">
                 <p class="mb-3 text-[13px] leading-6 text-ink-soft">پروژه‌هایی که در این ماه پرسنل دارند. پروژه جدید را از صفحه «پروژه‌ها» تعریف کنید.</p>
-                <div class="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto">
-                    @foreach ($allProjects as $project)
-                        <label class="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm hover:border-accent/40 has-checked:border-accent/50 has-checked:bg-accent-soft" wire:key="mp-{{ $project->id }}">
-                            <input type="checkbox" wire:model="monthProjectIds" value="{{ $project->id }}" class="size-4 rounded border-zinc-300 accent-accent">
-                            {{ $project->name }}
-                            @unless ($project->is_active) <span class="text-xs text-zinc-400">(غیرفعال)</span> @endunless
-                        </label>
-                    @endforeach
-                </div>
+                <label for="month-projects" class="label">پروژه‌ها</label>
+                <x-project-picker id="month-projects" multiple model="monthProjectIds" placeholder="پروژه‌های این ماه را انتخاب کنید"
+                    :options="$allProjects->map(fn ($p) => ['value' => (string) $p->id, 'label' => $p->name, 'hint' => $p->is_active ? null : 'غیرفعال'])->values()->all()" />
                 @error('monthProjects') <p class="error">{{ $message }}</p> @enderror
             </form>
             <x-slot:footer>

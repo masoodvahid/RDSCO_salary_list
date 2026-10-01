@@ -8,6 +8,7 @@
     <title>{{ isset($title) ? $title.' · '.config('tuka.name') : config('tuka.name') }}</title>
     <script src="{{ asset('js/sheet-grid.js') }}?v={{ @filemtime(public_path('js/sheet-grid.js')) }}"></script>
     <script src="{{ asset('js/updater.js') }}?v={{ @filemtime(public_path('js/updater.js')) }}"></script>
+    <script src="{{ asset('js/picker.js') }}?v={{ @filemtime(public_path('js/picker.js')) }}"></script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>

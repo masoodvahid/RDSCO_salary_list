@@ -199,9 +199,12 @@ class MembersTest extends TestCase
     public function test_switching_to_editor_forces_specific_projects(): void
     {
         $manager = User::factory()->manager()->create();
+        Project::factory()->create(['name' => 'پروژه کارون']);
 
         Livewire::actingAs($manager)
             ->test(Members::class)
+            ->assertSee('id="inv-projects"', false)
+            ->assertSee('پروژه کارون')
             ->set('role', 'viewer')
             ->set('scope', 'all')
             ->set('role', 'editor')
