@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Upgrading an installed system: users.project_id moves into project_user, and back on rollback.
+ * Upgrading an installed system: users.project_id moves into project_user (and back on rollback);
+ * sign-in history and invitation links are carried into user_logs.
  * Runs on a separate scratch database so the main test database is never touched.
  */
 class ProjectMembershipMigrationTest extends TestCase
@@ -35,7 +36,18 @@ class ProjectMembershipMigrationTest extends TestCase
             ['id' => 5, 'name' => 'مالی', 'mobile' => '09120000004', 'role' => 'approver', 'project_id' => null, 'is_active' => 1],
         ]);
 
+        // Sign-in history and invitation links become account activity.
+        $db->table('otp_challenges')->insert([
+            ['user_id' => 2, 'purpose' => 'login', 'code_hash' => 'x', 'expires_at' => now(), 'consumed_at' => '2026-09-20 08:00:00', 'ip' => '10.0.0.7', 'created_at' => now(), 'updated_at' => now()],
+            ['user_id' => 2, 'purpose' => 'login', 'code_hash' => 'x', 'expires_at' => now(), 'consumed_at' => null, 'ip' => '10.0.0.8', 'created_at' => now(), 'updated_at' => now()],
+            ['user_id' => 3, 'purpose' => 'approval', 'code_hash' => 'x', 'expires_at' => now(), 'consumed_at' => now(), 'ip' => null, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        $db->table('invitations')->insert(['user_id' => 3, 'token_hash' => str_repeat('a', 64), 'invited_by' => 1, 'expires_at' => now(), 'created_at' => '2026-09-01 09:00:00', 'updated_at' => now()]);
+
         $this->migrate();
+
+        $activity = $db->table('user_logs')->orderBy('id')->get(['user_id', 'actor_id', 'action', 'ip']);
+        $this->assertSame([[2, 2, 'login', '10.0.0.7'], [3, 1, 'account.link', null]], $activity->map(fn ($a) => [(int) $a->user_id, (int) $a->actor_id, $a->action, $a->ip])->all());
 
         $links = $db->table('project_user')->orderBy('user_id')->get(['user_id', 'project_id', 'approver_key']);
         $this->assertSame([[2, 1, null], [3, 1, 1], [4, 1, null]], $links->map(fn ($l) => [(int) $l->user_id, (int) $l->project_id, $l->approver_key === null ? null : (int) $l->approver_key])->all());

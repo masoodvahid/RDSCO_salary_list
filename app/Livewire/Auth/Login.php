@@ -6,6 +6,7 @@ use App\Models\Invitation;
 use App\Models\OtpChallenge;
 use App\Models\User;
 use App\Services\Otp\OtpService;
+use App\Services\UserActivity;
 use App\Support\Digits;
 use App\Support\Mobile;
 use Illuminate\Support\Facades\Auth;
@@ -70,7 +71,7 @@ class Login extends Component
         $this->code = '';
     }
 
-    public function verify(OtpService $otp)
+    public function verify(OtpService $otp, UserActivity $activity)
     {
         $this->resetErrorBag();
 
@@ -80,7 +81,15 @@ class Login extends Component
             throw ValidationException::withMessages(['mobile' => 'دوباره کد بگیرید.']);
         }
 
-        $otp->verify($challenge, $this->code);
+        try {
+            $otp->verify($challenge, $this->code);
+        } catch (ValidationException $e) {
+            if ($challenge->user) {
+                $activity->record($challenge->user, 'login.failed', $challenge->user, ['reason' => collect($e->errors())->flatten()->first()]);
+            }
+
+            throw $e;
+        }
 
         $user = $challenge->user;
         if (! $user || ! $user->is_active) {
@@ -90,6 +99,7 @@ class Login extends Component
         Auth::login($user, remember: true);
         session()->regenerate();
         $user->forceFill(['last_login_at' => now()])->save();
+        $activity->record($user, 'login', $user);
 
         if ($inviteId = session('invite_id')) {
             Invitation::whereKey($inviteId)->update(['last_used_at' => now()]);

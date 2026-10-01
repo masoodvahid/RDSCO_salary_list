@@ -7,6 +7,8 @@ use App\Livewire\Members;
 use App\Models\Invitation;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\UserLog;
+use App\Services\UserActivity;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -262,5 +264,82 @@ class MembersTest extends TestCase
         $this->assertNull($first->projects()->first()->pivot->approver_key);
         User::factory()->approver($project)->create();
         $this->assertSame(1, $project->users()->wherePivotNotNull('approver_key')->count());
+    }
+
+    public function test_manager_changes_a_members_mobile_and_the_change_is_logged(): void
+    {
+        $manager = User::factory()->manager()->create(['name' => 'مدیر']);
+        $taken = User::factory()->viewer()->create(['name' => 'نفر دیگر', 'mobile' => '09125550000']);
+        $member = User::factory()->viewer()->create(['mobile' => '09121112233']);
+
+        $component = Livewire::actingAs($manager)->test(Members::class)
+            ->call('startEdit', $member->id)
+            ->assertSet('editMobile', '09121112233')
+            ->set('editMobile', '0912')
+            ->call('saveEdit')
+            ->assertHasErrors('editMobile')
+            ->set('editMobile', '09125550000')
+            ->call('saveEdit')
+            ->assertHasErrors('editMobile')
+            ->assertSee('این شماره برای «نفر دیگر» ثبت شده است.');
+        $this->assertSame('09121112233', $member->fresh()->mobile);
+
+        $component->set('editMobile', '+98 912 777 6655')->call('saveEdit')->assertHasNoErrors();
+
+        $this->assertSame('09127776655', $member->fresh()->mobile);
+        $log = UserLog::where('user_id', $member->id)->where('action', 'account.updated')->firstOrFail();
+        $this->assertSame($manager->id, $log->actor_id);
+        $this->assertSame(['موبایل' => ['09121112233', '09127776655']], $log->meta['changes']);
+        $this->assertSame('09125550000', $taken->fresh()->mobile);
+    }
+
+    public function test_manager_sees_a_members_activity(): void
+    {
+        $manager = User::factory()->manager()->create(['name' => 'مدیر']);
+        $project = Project::factory()->create(['name' => 'دماوند']);
+        $member = User::factory()->editor($project)->create(['name' => 'سمیرا امینی']);
+        $sheet = app(\App\Services\SheetBuilder::class)->create($manager, 1405, 7);
+        $column = \App\Models\SheetColumn::create(['sheet_id' => $sheet->id, 'title' => 'اضافه‌کار', 'type' => 'number', 'is_locked' => false, 'position' => 1]);
+        $row = \App\Models\SheetRow::create(['sheet_id' => $sheet->id, 'project_id' => $project->id, 'first_name' => 'علی', 'last_name' => 'رضایی', 'national_code' => \App\Support\NationalCode::fromNineDigits('001234567'), 'position' => 1]);
+
+        $activity = app(UserActivity::class);
+        $activity->record($member, 'login', $member);
+        app(\App\Services\SheetEditor::class)->saveCells($member, $sheet, [['row' => $row->id, 'column' => $column->id, 'value' => '1500000', 'version' => 0]]);
+
+        $component = Livewire::actingAs($manager)->test(Members::class)
+            ->call('toggleActive', $member->id)
+            ->call('showActivity', $member->id)
+            ->assertSee('فعالیت‌های سمیرا امینی')
+            ->assertSee('وارد سامانه شد')
+            ->assertSee('«اضافه‌کار» علی رضایی')
+            ->assertSee('خالی ← ۱٬۵۰۰٬۰۰۰')
+            ->assertSee('لیست حقوق مهر ۱۴۰۵')
+            ->assertSee('دسترسی‌اش قطع شد (توسط مدیر)');
+
+        $component->set('activityFilter', 'account')->assertDontSee('«اضافه‌کار» علی رضایی')->assertSee('وارد سامانه شد')
+            ->set('activityFilter', 'lists')->assertDontSee('وارد سامانه شد')->assertSee('«اضافه‌کار» علی رضایی');
+
+        // The manager's own log shows what they did to others.
+        Livewire::actingAs($manager)->test(Members::class)
+            ->call('showActivity', $manager->id)
+            ->assertSee('دسترسی سمیرا امینی را قطع کرد')
+            ->assertSee('لیست حقوق ماه را ساخت');
+    }
+
+    public function test_the_activity_list_pages_through_long_histories(): void
+    {
+        $manager = User::factory()->manager()->create();
+        $member = User::factory()->viewer()->create();
+        for ($i = 0; $i < 60; $i++) {
+            UserLog::create(['user_id' => $member->id, 'actor_id' => $member->id, 'action' => 'login']);
+        }
+
+        $component = Livewire::actingAs($manager)->test(Members::class)->call('showActivity', $member->id);
+        $this->assertCount(50, $component->instance()->activity()['entries']);
+        $this->assertTrue($component->instance()->activity()['more']);
+
+        $component->call('moreActivity');
+        $this->assertCount(60, $component->instance()->activity()['entries']);
+        $this->assertFalse($component->instance()->activity()['more']);
     }
 }

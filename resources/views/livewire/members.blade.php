@@ -122,6 +122,7 @@
                     <span class="chip {{ $member->role->chipClass() }}">{{ $member->role->label() }}</span>
                     <div class="flex items-center gap-1">
                         <button type="button" wire:click="startEdit({{ $member->id }})" class="btn btn-ghost btn-sm">تغییر</button>
+                        <button type="button" wire:click="showActivity({{ $member->id }})" class="btn btn-ghost btn-sm">فعالیت‌ها</button>
                         @if ($member->is_active)
                             <button type="button" wire:click="newLink({{ $member->id }})" class="btn btn-ghost btn-sm text-accent">لینک دعوت</button>
                         @endif
@@ -154,6 +155,11 @@
                         @error('editJobTitle') <p class="error">{{ $message }}</p> @enderror
                     </div>
                     <div>
+                        <label for="edit-mobile" class="label">شماره موبایل</label>
+                        <input id="edit-mobile" wire:model="editMobile" type="tel" inputmode="numeric" dir="ltr" class="input num text-left" placeholder="09121234567">
+                        @error('editMobile') <p class="error">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
                         <label for="edit-role" class="label">نقش</label>
                         <select id="edit-role" wire:model.live="editRole" class="input" @disabled($editingId === auth()->id())>
                             @foreach ($roles as $r)
@@ -163,12 +169,56 @@
                         @error('editRole') <p class="error">{{ $message }}</p> @enderror
                     </div>
                 </div>
+                <p class="hint -mt-1">با تغییر شماره، کدهای پیامکی قبلی باطل و نشست‌های باز این نفر بسته می‌شود؛ ورود بعدی با شماره‌ی جدید است.</p>
                 @include('livewire.partials.project-scope', ['prefix' => 'edit', 'scopeModel' => 'editScope', 'idsModel' => 'editProjectIds', 'role' => $editRole, 'scope' => $editScope, 'projects' => $this->editProjects])
             </form>
             <x-slot:footer>
                 <button type="button" wire:click="cancelEdit" class="btn btn-ghost">انصراف</button>
                 <button type="submit" form="member-edit-form" class="btn btn-primary">ذخیره</button>
             </x-slot:footer>
+        </x-modal>
+    @endif
+    @if ($activityFor && ($activity = $this->activity))
+        @php $member = $activity['member']; @endphp
+        <x-modal title="فعالیت‌های {{ $member->name }}" close="closeActivity" width="max-w-2xl">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <p class="text-xs leading-5 text-ink-soft">
+                    {{ $member->role->label() }} · {{ $member->scopeLabel() }}
+                    <span class="text-zinc-300">|</span> {{ $member->last_login_at ? 'آخرین ورود: '.Jalali::formatLong($member->last_login_at).'، '.\App\Support\Digits::toPersian($member->last_login_at->format('H:i')) : 'هنوز وارد نشده' }}
+                </p>
+                <label for="activity-filter" class="sr-only">نوع فعالیت</label>
+                <select id="activity-filter" wire:model.live="activityFilter" class="input h-8 w-48 py-0 text-[13px]">
+                    @foreach (\App\Services\UserActivity::FILTERS as $value => $label)
+                        <option value="{{ $value }}">{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div class="max-h-[60vh] overflow-y-auto pe-1">
+                @forelse (collect($activity['entries'])->groupBy(fn ($e) => Jalali::formatLong($e['at'])) as $day => $entries)
+                    <h3 class="sticky top-0 z-10 bg-white py-1.5 text-xs font-bold text-ink-soft">{{ $day }}</h3>
+                    <ul class="mb-3 space-y-0.5">
+                        @foreach ($entries as $entry)
+                            <li class="flex gap-3 rounded-lg px-2 py-1.5 text-[13px] leading-6 hover:bg-canvas" @if ($entry['title']) title="{{ $entry['title'] }}" @endif>
+                                <span class="num w-10 shrink-0 text-xs leading-6 text-ink-soft">{{ \App\Support\Digits::toPersian($entry['at']->format('H:i')) }}</span>
+                                <span class="mt-2 size-2 shrink-0 rounded-full {{ $entry['tone'] }}" aria-hidden="true"></span>
+                                <div class="min-w-0 flex-1">
+                                    <span class="font-medium">{{ $entry['text'] }}</span>
+                                    @if ($entry['detail']) <span class="text-ink-soft">— {{ $entry['detail'] }}</span> @endif
+                                    @if ($entry['context']) <div class="text-xs text-ink-soft">{{ $entry['context'] }}</div> @endif
+                                </div>
+                            </li>
+                        @endforeach
+                    </ul>
+                @empty
+                    <p class="py-10 text-center text-sm text-ink-soft">فعالیتی ثبت نشده است.</p>
+                @endforelse
+            </div>
+            @if ($activity['more'])
+                <div class="mt-3 text-center">
+                    <button type="button" wire:click="moreActivity" class="btn btn-sm" wire:loading.attr="disabled">نمایش بیشتر</button>
+                </div>
+            @endif
         </x-modal>
     @endif
 </div>

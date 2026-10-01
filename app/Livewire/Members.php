@@ -3,13 +3,16 @@
 namespace App\Livewire;
 
 use App\Enums\Role;
+use App\Models\OtpChallenge;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\InviteService;
 use App\Services\SheetAccess;
+use App\Services\UserActivity;
 use App\Support\Mobile;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
@@ -41,6 +44,8 @@ class Members extends Component
 
     public string $editJobTitle = '';
 
+    public string $editMobile = '';
+
     public string $editRole = '';
 
     public string $editScope = 'some';
@@ -55,6 +60,14 @@ class Members extends Component
     public bool $smsSent = false;
 
     public string $search = '';
+
+    /** Member whose activity dialog is open. */
+    #[Locked]
+    public ?int $activityFor = null;
+
+    public string $activityFilter = 'all';
+
+    public int $activityLimit = 50;
 
     public function mount(): void
     {
@@ -154,6 +167,7 @@ class Members extends Component
             throw ValidationException::withMessages(['projectIds' => 'یکی از این پروژه‌ها همین حالا تاییدکننده گرفت یا شماره تکراری است. دوباره امتحان کنید.']);
         }
 
+        app(UserActivity::class)->record($user, 'account.invited', auth()->user(), ['role' => $user->role->label(), 'scope' => $user->scopeLabel()]);
         $this->inviteLink = $invites->createLink($user, auth()->user());
         $this->inviteFor = $user->name;
         $this->smsSent = $invites->sendLinkSms($user, $this->inviteLink);
@@ -166,6 +180,7 @@ class Members extends Component
         $this->authorizeManage();
         $user = User::findOrFail($userId);
         $this->inviteLink = $invites->createLink($user, auth()->user());
+        app(UserActivity::class)->record($user, 'account.link', auth()->user());
         $this->inviteFor = $user->name;
         $this->smsSent = $invites->sendLinkSms($user, $this->inviteLink);
     }
@@ -177,6 +192,7 @@ class Members extends Component
         $this->editingId = $user->id;
         $this->editName = $user->name;
         $this->editJobTitle = (string) $user->job_title;
+        $this->editMobile = $user->mobile;
         $this->editRole = $user->role->value;
         $this->editProjectIds = array_map('strval', $user->projectIds());
         $this->editScope = $this->editProjectIds === [] && $user->role !== Role::Editor ? 'all' : 'some';
@@ -202,20 +218,41 @@ class Members extends Component
         if (mb_strlen($jobTitle) > 120) {
             $errors['editJobTitle'] = 'موقعیت شغلی حداکثر ۱۲۰ کاراکتر است.';
         }
+        $mobile = Mobile::normalize($this->editMobile);
+        if (! Mobile::isValid($mobile)) {
+            $errors['editMobile'] = 'شماره موبایل را به شکل ۰۹۱۲۱۲۳۴۵۶۷ وارد کنید.';
+        } elseif ($owner = User::where('mobile', $mobile)->whereKeyNot($user->id)->first()) {
+            $errors['editMobile'] = "این شماره برای «{$owner->name}» ثبت شده است.";
+        }
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
 
         try {
-            DB::transaction(function () use ($user, $role, $projectIds, $name, $jobTitle) {
+            DB::transaction(function () use ($user, $role, $projectIds, $name, $jobTitle, $mobile) {
                 // Lock the member so a concurrent activate/deactivate cannot leave approver slots out of step.
                 $locked = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
+                $before = $this->snapshot($locked);
                 // Projects first, with the new role, so approver slots are claimed for the final set.
                 $locked->syncProjects($projectIds, Role::from($role), $locked->is_active);
-                $locked->update(['name' => $name, 'role' => $role, 'job_title' => $jobTitle === '' ? null : $jobTitle]);
+                $locked->update(['name' => $name, 'role' => $role, 'job_title' => $jobTitle === '' ? null : $jobTitle, 'mobile' => $mobile]);
+                if ($locked->wasChanged('mobile')) {
+                    $this->secureNewMobile($locked);
+                }
+
+                $after = $this->snapshot($locked);
+                $changes = [];
+                foreach ($before as $label => $old) {
+                    if ($old !== $after[$label]) {
+                        $changes[$label] = [$old, $after[$label]];
+                    }
+                }
+                if ($changes !== []) {
+                    app(UserActivity::class)->record($locked, 'account.updated', auth()->user(), ['changes' => $changes]);
+                }
             });
         } catch (UniqueConstraintViolationException) {
-            throw ValidationException::withMessages(['editProjectIds' => 'یکی از این پروژه‌ها همین حالا تاییدکننده گرفت. دوباره امتحان کنید.']);
+            throw ValidationException::withMessages(['editProjectIds' => 'یکی از این پروژه‌ها همین حالا تاییدکننده گرفت یا این شماره هم‌زمان ثبت شد. دوباره امتحان کنید.']);
         }
 
         $this->editingId = null;
@@ -240,11 +277,73 @@ class Members extends Component
             DB::transaction(function () use ($user) {
                 $locked = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
                 $locked->update(['is_active' => ! $locked->is_active]);
+                app(UserActivity::class)->record($locked, $locked->is_active ? 'account.activated' : 'account.deactivated', auth()->user());
             });
         } catch (UniqueConstraintViolationException) {
             $this->addError('members', "یکی از پروژه‌های {$user->name} تاییدکننده‌ی فعال دیگری دارد؛ اول او را غیرفعال کنید یا آن پروژه را از یکی‌شان بگیرید.");
         }
         unset($this->members);
+    }
+
+    public function showActivity(int $userId): void
+    {
+        $this->authorizeManage();
+        $this->activityFor = User::findOrFail($userId)->id;
+        $this->activityFilter = 'all';
+        $this->activityLimit = 50;
+        unset($this->activity);
+    }
+
+    public function moreActivity(): void
+    {
+        $this->activityLimit = min($this->activityLimit + 50, 1000);
+    }
+
+    public function closeActivity(): void
+    {
+        $this->activityFor = null;
+    }
+
+    /** @return array{member: User, entries: list<array<string, mixed>>, more: bool}|null */
+    #[Computed]
+    public function activity(): ?array
+    {
+        if (! $this->activityFor) {
+            return null;
+        }
+        $member = User::findOrFail($this->activityFor);
+        $filter = array_key_exists($this->activityFilter, UserActivity::FILTERS) ? $this->activityFilter : 'all';
+
+        return ['member' => $member] + app(UserActivity::class)->feed($member, $this->activityLimit, $filter);
+    }
+
+    /** What an account change is compared on, keyed by the label shown in the activity log. */
+    private function snapshot(User $user): array
+    {
+        return [
+            'نام' => $user->name,
+            'موقعیت شغلی' => (string) $user->job_title,
+            'موبایل' => $user->mobile,
+            'نقش' => $user->role->label(),
+            'محدوده' => $user->scopeLabel(),
+        ];
+    }
+
+    /**
+     * After a number change, codes already sent to the old number stop working and the member's
+     * open sessions are closed; the next sign-in uses the new number.
+     */
+    private function secureNewMobile(User $user): void
+    {
+        OtpChallenge::where('user_id', $user->id)->whereNull('consumed_at')->where('expires_at', '>', now())->update(['expires_at' => now()]);
+        $user->forceFill(['remember_token' => Str::random(60)])->saveQuietly();
+
+        if (config('session.driver') === 'database') {
+            DB::table(config('session.table', 'sessions'))
+                ->where('user_id', $user->id)
+                ->when($user->id === auth()->id(), fn ($q) => $q->where('id', '!=', session()->getId()))
+                ->delete();
+        }
     }
 
     public function dismissLink(): void
@@ -312,6 +411,8 @@ class Members extends Component
 
     public function render()
     {
+        $this->authorizeManage();
+
         return view('livewire.members', ['roles' => Role::cases()])->title('اعضا و دسترسی');
     }
 }
