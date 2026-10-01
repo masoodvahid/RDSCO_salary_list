@@ -98,7 +98,7 @@
                     <h2 class="text-sm font-bold">پروژه‌های این ماه</h2>
                     <span class="text-xs text-ink-soft">{{ Digits::toPersian($projectCount) }} پروژه</span>
                 </div>
-                <div class="overflow-x-auto">
+                <div class="relative overflow-x-auto">
                     <table class="w-full min-w-[640px] text-sm">
                         <thead class="bg-canvas/70 text-[13px] text-ink-soft">
                             <tr>

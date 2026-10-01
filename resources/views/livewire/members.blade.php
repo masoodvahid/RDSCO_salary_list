@@ -110,7 +110,7 @@
             @forelse ($this->members as $member)
                 <li wire:key="member-{{ $member->id }}" @class(['flex flex-wrap items-center gap-3 px-5 py-3', 'bg-canvas/60' => ! $member->is_active])>
                     <x-avatar :name="$member->name" @class(['grayscale' => ! $member->is_active]) />
-                    <div class="min-w-0 flex-1">
+                    <div class="min-w-52 flex-1">
                         <div class="flex flex-wrap items-center gap-x-2 text-sm font-semibold">
                             {{ $member->name }}
                             @if ($member->id === auth()->id()) <span class="text-xs font-normal text-ink-soft">(شما)</span> @endif
