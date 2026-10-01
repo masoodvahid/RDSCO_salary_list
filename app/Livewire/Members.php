@@ -129,6 +129,7 @@ class Members extends Component
     public function invite(InviteService $invites): void
     {
         $this->authorizeManage();
+        $this->resetErrorBag(); // errors of the previous attempt
         $this->mobile = Mobile::normalize($this->mobile);
         $this->name = trim($this->name);
         $this->jobTitle = $this->cleanText($this->jobTitle);
@@ -203,6 +204,7 @@ class Members extends Component
     public function saveEdit(): void
     {
         $this->authorizeManage();
+        $this->resetErrorBag(); // errors of the previous attempt
         $user = User::findOrFail((int) $this->editingId);
 
         if ($user->id === auth()->id() && $this->editRole !== Role::Manager->value) {

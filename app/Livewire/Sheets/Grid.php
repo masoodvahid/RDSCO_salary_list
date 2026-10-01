@@ -428,6 +428,7 @@ class Grid extends Component
 
     public function addComment(ListHistory $history): void
     {
+        $this->resetErrorBag('commentBody');
         $sheetProject = $this->currentSheetProject;
         abort_unless($sheetProject, 404);
         $history->addComment($this->user(), $sheetProject, $this->commentBody, $this->commentInPrint);
@@ -565,6 +566,7 @@ class Grid extends Component
     public function import(PersonnelImporter $importer): void
     {
         abort_unless($importer->mode($this->user(), $this->sheet) !== null, 403);
+        $this->resetErrorBag(['importFile', 'importRows']); // messages of the previous file
         $this->validate(
             ['importFile' => ['required', 'file', 'max:5120', 'extensions:xlsx,csv,txt']],
             [
