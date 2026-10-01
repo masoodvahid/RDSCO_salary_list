@@ -1,0 +1,322 @@
+<!DOCTYPE html><html lang="fa" dir="rtl"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="x7EBOhFPK7fdpECRLxhuotu5UFtkfvawhKPfkXyS">
+    <meta name="theme-color" content="#ffffff">
+    <title>اعضا و دسترسی · لیست حقوق توکا</title>
+    <script src="http://127.0.0.1:8000/js/sheet-grid.js?v=1790837201"></script>
+    <link rel="preload" as="style" href="http://127.0.0.1:8000/build/assets/app-qj2H8thp.css"><link rel="modulepreload" as="script" href="http://127.0.0.1:8000/build/assets/app-BvRk9kiK.js"><link rel="stylesheet" href="http://127.0.0.1:8000/build/assets/app-qj2H8thp.css" data-navigate-track="reload"><script type="module" src="http://127.0.0.1:8000/build/assets/app-BvRk9kiK.js" data-navigate-track="reload"></script>    <!-- Livewire Styles --><style>[wire\:loading][wire\:loading], [wire\:loading\.delay][wire\:loading\.delay], [wire\:loading\.list-item][wire\:loading\.list-item], [wire\:loading\.inline-block][wire\:loading\.inline-block], [wire\:loading\.inline][wire\:loading\.inline], [wire\:loading\.block][wire\:loading\.block], [wire\:loading\.flex][wire\:loading\.flex], [wire\:loading\.table][wire\:loading\.table], [wire\:loading\.grid][wire\:loading\.grid], [wire\:loading\.inline-flex][wire\:loading\.inline-flex] {display: none;}[wire\:loading\.delay\.none][wire\:loading\.delay\.none], [wire\:loading\.delay\.shortest][wire\:loading\.delay\.shortest], [wire\:loading\.delay\.shorter][wire\:loading\.delay\.shorter], [wire\:loading\.delay\.short][wire\:loading\.delay\.short], [wire\:loading\.delay\.default][wire\:loading\.delay\.default], [wire\:loading\.delay\.long][wire\:loading\.delay\.long], [wire\:loading\.delay\.longer][wire\:loading\.delay\.longer], [wire\:loading\.delay\.longest][wire\:loading\.delay\.longest] {display: none;}[wire\:offline][wire\:offline] {display: none;}[wire\:dirty]:not(textarea):not(input):not(select) {display: none;}:root {--livewire-progress-bar-color: #2299dd;}[x-cloak="x-cloak"],[x-cloak=""] {display: none !important;}[wire\:cloak="wire:cloak"],[wire\:cloak=""] {display: none !important;}dialog#livewire-error::backdrop {background-color: rgba(0, 0, 0, .6);}</style>
+<style>/* Make clicks pass-through */
+
+    #nprogress {
+      pointer-events: none;
+    }
+
+    #nprogress .bar {
+      background: var(--livewire-progress-bar-color, #29d);
+
+      position: fixed;
+      z-index: 1031;
+      top: 0;
+      left: 0;
+
+      width: 100%;
+      height: 2px;
+    }
+
+    /* Fancy blur effect */
+    #nprogress .peg {
+      display: block;
+      position: absolute;
+      right: 0px;
+      width: 100px;
+      height: 100%;
+      box-shadow: 0 0 10px var(--livewire-progress-bar-color, #29d), 0 0 5px var(--livewire-progress-bar-color, #29d);
+      opacity: 1.0;
+
+      -webkit-transform: rotate(3deg) translate(0px, -4px);
+          -ms-transform: rotate(3deg) translate(0px, -4px);
+              transform: rotate(3deg) translate(0px, -4px);
+    }
+
+    /* Remove these to get rid of the spinner */
+    #nprogress .spinner {
+      display: block;
+      position: fixed;
+      z-index: 1031;
+      top: 15px;
+      right: 15px;
+    }
+
+    #nprogress .spinner-icon {
+      width: 18px;
+      height: 18px;
+      box-sizing: border-box;
+
+      border: solid 2px transparent;
+      border-top-color: var(--livewire-progress-bar-color, #29d);
+      border-left-color: var(--livewire-progress-bar-color, #29d);
+      border-radius: 50%;
+
+      -webkit-animation: nprogress-spinner 400ms linear infinite;
+              animation: nprogress-spinner 400ms linear infinite;
+    }
+
+    .nprogress-custom-parent {
+      overflow: hidden;
+      position: relative;
+    }
+
+    .nprogress-custom-parent #nprogress .spinner,
+    .nprogress-custom-parent #nprogress .bar {
+      position: absolute;
+    }
+
+    @-webkit-keyframes nprogress-spinner {
+      0%   { -webkit-transform: rotate(0deg); }
+      100% { -webkit-transform: rotate(360deg); }
+    }
+    @keyframes nprogress-spinner {
+      0%   { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    </style></head>
+<body class="min-h-screen bg-canvas font-sans text-ink antialiased">
+        <header class="no-print sticky top-0 z-30 border-b border-line bg-white/95 backdrop-blur">
+        <div class="flex h-14 items-center justify-between gap-6 px-4 sm:px-6">
+            <div class="flex items-center gap-7">
+                <a href="http://127.0.0.1:8000" wire:navigate="" aria-label="صفحه اصلی">
+                    <span class="flex items-center gap-2.5">
+    <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span class="text-[15px] leading-none font-extrabold text-ink">توکا <span class="ms-1 font-medium text-ink-soft">لیست حقوق</span></span>
+</span>
+                </a>
+                <nav aria-label="بخش‌ها" class="hidden h-14 items-stretch gap-1 text-sm sm:flex">
+                                                                                            <a href="http://127.0.0.1:8000" wire:navigate="" class="relative flex items-center px-3 text-ink-soft hover:text-ink">شیت‌ها</a>
+                                                                                            <a href="http://127.0.0.1:8000/members" wire:navigate="" aria-current="page" class="relative flex items-center px-3 font-bold text-accent after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent" data-current="">اعضا و دسترسی</a>
+                                                                                            <a href="http://127.0.0.1:8000/projects" wire:navigate="" class="relative flex items-center px-3 text-ink-soft hover:text-ink">پروژه‌ها</a>
+                                    </nav>
+            </div>
+                            <div class="flex items-center gap-3">
+                    <div class="hidden items-center gap-2.5 sm:flex">
+                        <span class="flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-bold bg-amber-100 text-amber-800" aria-hidden="true">م</span>
+                        <div class="leading-tight">
+                            <div class="text-[13px] font-semibold">مدیر منابع انسانی (نمونه)</div>
+                            <div class="text-xs text-ink-soft">مدیر منابع انسانی <span class="text-zinc-300">|</span> همه پروژه‌ها</div>
+                        </div>
+                    </div>
+                    <form method="POST" action="http://127.0.0.1:8000/logout">
+                        <input type="hidden" name="_token" value="x7EBOhFPK7fdpECRLxhuotu5UFtkfvawhKPfkXyS" autocomplete="off">                        <button type="submit" class="btn btn-ghost btn-sm text-ink-soft">خروج</button>
+                    </form>
+                </div>
+                    </div>
+        
+        <nav aria-label="بخش‌ها (موبایل)" class="flex gap-1 overflow-x-auto border-t border-line px-3 py-1.5 text-[13px] sm:hidden">
+                                            <a href="http://127.0.0.1:8000" wire:navigate="" class="rounded-md px-3 py-1.5 whitespace-nowrap text-ink-soft">شیت‌ها</a>
+                                            <a href="http://127.0.0.1:8000/members" wire:navigate="" class="rounded-md px-3 py-1.5 whitespace-nowrap bg-accent-soft font-bold text-accent" data-current="">اعضا و دسترسی</a>
+                                            <a href="http://127.0.0.1:8000/projects" wire:navigate="" class="rounded-md px-3 py-1.5 whitespace-nowrap text-ink-soft">پروژه‌ها</a>
+                    </nav>
+    </header>
+
+    <main>
+        <div wire:snapshot="{&quot;data&quot;:{&quot;name&quot;:&quot;&quot;,&quot;jobTitle&quot;:&quot;&quot;,&quot;mobile&quot;:&quot;&quot;,&quot;role&quot;:&quot;editor&quot;,&quot;projectId&quot;:&quot;&quot;,&quot;editingId&quot;:null,&quot;editJobTitle&quot;:&quot;&quot;,&quot;editRole&quot;:&quot;&quot;,&quot;editProjectId&quot;:&quot;&quot;,&quot;inviteLink&quot;:null,&quot;inviteFor&quot;:null,&quot;smsSent&quot;:false,&quot;search&quot;:&quot;&quot;},&quot;memo&quot;:{&quot;id&quot;:&quot;BC0oXz6W0mfGGpQ778Wv&quot;,&quot;name&quot;:&quot;members&quot;,&quot;path&quot;:&quot;members&quot;,&quot;method&quot;:&quot;GET&quot;,&quot;release&quot;:&quot;a-a-a&quot;,&quot;children&quot;:[],&quot;scripts&quot;:[],&quot;assets&quot;:[],&quot;errors&quot;:[],&quot;locale&quot;:&quot;fa&quot;,&quot;islands&quot;:[]},&quot;checksum&quot;:&quot;964db7aecb3551dc7c51649d7abcf40c8a1f8218fa83cd8fc493ed7168f9229a&quot;}" wire:effects="[]" wire:id="BC0oXz6W0mfGGpQ778Wv" wire:name="members" class="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <h1 class="page-title">اعضا و دسترسی</h1>
+    <p class="page-lead">هر نفر با نام و شماره موبایل دعوت می‌شود. ورود فقط با کد پیامکی همان شماره است؛ ثبت‌نام و رمز عبور لازم نیست.</p>
+
+    <datalist id="job-titles">
+        <!--[if BLOCK]><![endif]-->            <option value="مدیر داخلی پروژه"></option>
+                    <option value="مدیر منابع انسانی"></option>
+                    <option value="مدیرعامل"></option>
+                    <option value="مسئول اداری پروژه"></option>
+                    <option value="مسئول حسابداری"></option>
+        <!--[if ENDBLOCK]><![endif]-->    </datalist>
+
+    <div class="mt-6 grid gap-6 lg:grid-cols-[1fr_300px]">
+        <form wire:submit="invite" class="card space-y-4 p-5">
+            <h2 class="text-base font-bold">دعوت نفر جدید</h2>
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label for="inv-name" class="label">نام دعوت‌شونده</label>
+                    <input id="inv-name" wire:model="name" class="input" placeholder="مثلاً: کاوه مرادی">
+                    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                </div>
+                <div>
+                    <label for="inv-job" class="label">موقعیت شغلی <span class="font-normal text-ink-soft">(اختیاری)</span></label>
+                    <input id="inv-job" wire:model="jobTitle" list="job-titles" maxlength="120" class="input" placeholder="مثلاً: مدیر داخلی پروژه">
+                    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                </div>
+                <div>
+                    <label for="inv-mobile" class="label">شماره موبایل</label>
+                    <input id="inv-mobile" wire:model="mobile" type="tel" inputmode="numeric" dir="ltr" class="input num text-left" placeholder="09121234567">
+                    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                </div>
+                <div>
+                    <label for="inv-role" class="label">نقش</label>
+                    <select id="inv-role" wire:model.live="role" class="input">
+                        <!--[if BLOCK]><![endif]-->                            <option value="viewer">مشاهده</option>
+                                                    <option value="editor">ویرایشگر</option>
+                                                    <option value="approver">تاییدکننده</option>
+                                                    <option value="manager">مدیر</option>
+                        <!--[if ENDBLOCK]><![endif]-->                    </select>
+                    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                </div>
+                <div class="sm:col-span-2">
+                    <label for="inv-project" class="label">محدوده دسترسی</label>
+                    <select id="inv-project" wire:model="projectId" class="input">
+                        <option value="">همه پروژه‌ها</option>
+                        <!--[if BLOCK]><![endif]-->                            <option value="3">پروژه آتیه</option>
+                                                    <option value="4">پروژه البرز</option>
+                                                    <option value="1">پروژه دماوند</option>
+                                                    <option value="2">پروژه سپهر</option>
+                        <!--[if ENDBLOCK]><![endif]-->                    </select>
+                    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                </div>
+            </div>
+            <div class="flex items-center justify-between gap-4 border-t border-line pt-4">
+                <p class="text-xs leading-5 text-ink-soft">
+                    <!--[if BLOCK]><![endif]-->                        ویرایش ستون‌های باز؛ بدون افزودن ردیف و تغییر ستون‌های قفل
+                    <!--[if ENDBLOCK]><![endif]-->                </p>
+                <button type="submit" class="btn btn-primary shrink-0">ساخت لینک دعوت</button>
+            </div>
+        </form>
+
+        <aside class="card self-start p-5 text-[13px] leading-6">
+            <h2 class="mb-3 text-sm font-bold">نقش‌ها</h2>
+            <ul class="space-y-3">
+                <!--[if BLOCK]><![endif]-->                    <li>
+                        <span class="chip bg-slate-50 text-slate-700 ring-slate-200">مشاهده</span>
+                        <p class="mt-1 text-ink-soft">دیدن شیت و گذاشتن یادداشت</p>
+                    </li>
+                                    <li>
+                        <span class="chip bg-sky-50 text-sky-800 ring-sky-200">ویرایشگر</span>
+                        <p class="mt-1 text-ink-soft">ویرایش ستون‌های باز؛ بدون افزودن ردیف و تغییر ستون‌های قفل</p>
+                    </li>
+                                    <li>
+                        <span class="chip bg-violet-50 text-violet-800 ring-violet-200">تاییدکننده</span>
+                        <p class="mt-1 text-ink-soft">امکانات ویرایشگر + تایید با کد پیامکی (روی یک پروژه: تایید پروژه؛ روی همه پروژه‌ها: تایید مالی)</p>
+                    </li>
+                                    <li>
+                        <span class="chip bg-accent-soft text-accent ring-indigo-200">مدیر</span>
+                        <p class="mt-1 text-ink-soft">همه عملیات: ردیف، ستون، قفل ستون، پروژه‌ها، اعضا و تایید منابع انسانی</p>
+                    </li>
+                <!--[if ENDBLOCK]><![endif]-->            </ul>
+        </aside>
+    </div>
+
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+    <section class="card mt-6 overflow-hidden" aria-label="افراد دارای دسترسی">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3">
+            <h2 class="text-sm font-bold">افراد دارای دسترسی <span class="font-normal text-ink-soft">(۵)</span></h2>
+            <label for="member-search" class="sr-only">جستجو</label>
+            <input id="member-search" type="search" wire:model.live.debounce.300ms="search" placeholder="جستجوی نام، سمت یا شماره" class="input h-8 w-60 text-[13px]">
+        </div>
+        <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->        <ul class="divide-y divide-line">
+            <!--[if BLOCK]><![endif]-->                <li wire:key="member-1" class="flex flex-wrap items-center gap-3 px-5 py-3">
+                    <span class="flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-bold bg-amber-100 text-amber-800" aria-hidden="true">م</span>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-x-2 text-sm font-semibold">
+                            مدیر منابع انسانی (نمونه)
+                            <!--[if BLOCK]><![endif]--> <span class="text-xs font-normal text-ink-soft">(شما)</span> <!--[if ENDBLOCK]><![endif]-->                            <!--[if BLOCK]><![endif]-->                                <span class="text-[13px] font-medium text-accent">مدیر منابع انسانی</span>
+                            <!--[if ENDBLOCK]><![endif]-->                        </div>
+                        <div class="text-xs text-ink-soft">
+                            <span dir="ltr" class="num">0912•••0000</span>
+                            <span class="text-zinc-300">|</span> آخرین ورود: ۹ مهر ۱۴۰۵
+                            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                        </div>
+                    </div>
+
+                    <!--[if BLOCK]><![endif]-->                        <span class="chip bg-white text-ink-soft ring-line-strong">همه پروژه‌ها</span>
+                        <span class="chip bg-accent-soft text-accent ring-indigo-200">مدیر</span>
+                        <div class="flex items-center gap-1">
+                            <button type="button" wire:click="startEdit(1)" class="btn btn-ghost btn-sm">تغییر</button>
+                            <!--[if BLOCK]><![endif]-->                                <button type="button" wire:click="newLink(1)" class="btn btn-ghost btn-sm text-accent">لینک دعوت</button>
+                            <!--[if ENDBLOCK]><![endif]-->                            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                        </div>
+                    <!--[if ENDBLOCK]><![endif]-->                </li>
+                            <li wire:key="member-4" class="flex flex-wrap items-center gap-3 px-5 py-3">
+                    <span class="flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-bold bg-indigo-100 text-indigo-800" aria-hidden="true">م</span>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-x-2 text-sm font-semibold">
+                            مالی (نمونه)
+                            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                            <!--[if BLOCK]><![endif]-->                                <span class="text-[13px] font-medium text-accent">مسئول حسابداری</span>
+                            <!--[if ENDBLOCK]><![endif]-->                        </div>
+                        <div class="text-xs text-ink-soft">
+                            <span dir="ltr" class="num">0912•••0003</span>
+                            <span class="text-zinc-300">|</span> هنوز وارد نشده
+                            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                        </div>
+                    </div>
+
+                    <!--[if BLOCK]><![endif]-->                        <span class="chip bg-white text-ink-soft ring-line-strong">همه پروژه‌ها</span>
+                        <span class="chip bg-violet-50 text-violet-800 ring-violet-200">تاییدکننده</span>
+                        <div class="flex items-center gap-1">
+                            <button type="button" wire:click="startEdit(4)" class="btn btn-ghost btn-sm">تغییر</button>
+                            <!--[if BLOCK]><![endif]-->                                <button type="button" wire:click="newLink(4)" class="btn btn-ghost btn-sm text-accent">لینک دعوت</button>
+                            <!--[if ENDBLOCK]><![endif]-->                            <!--[if BLOCK]><![endif]-->                                <button type="button" wire:click="toggleActive(4)" wire:confirm="دسترسی مالی (نمونه) قطع شود؟" class="btn btn-ghost btn-sm text-red-700 hover:bg-red-50">قطع دسترسی</button>
+                            <!--[if ENDBLOCK]><![endif]-->                        </div>
+                    <!--[if ENDBLOCK]><![endif]-->                </li>
+                            <li wire:key="member-3" class="flex flex-wrap items-center gap-3 px-5 py-3">
+                    <span class="flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-bold bg-sky-100 text-sky-800" aria-hidden="true">م</span>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-x-2 text-sm font-semibold">
+                            مدیر پروژه دماوند (نمونه)
+                            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                            <!--[if BLOCK]><![endif]-->                                <span class="text-[13px] font-medium text-accent">مدیر داخلی پروژه</span>
+                            <!--[if ENDBLOCK]><![endif]-->                        </div>
+                        <div class="text-xs text-ink-soft">
+                            <span dir="ltr" class="num">0912•••0002</span>
+                            <span class="text-zinc-300">|</span> هنوز وارد نشده
+                            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                        </div>
+                    </div>
+
+                    <!--[if BLOCK]><![endif]-->                        <span class="chip bg-white text-ink-soft ring-line-strong">دماوند</span>
+                        <span class="chip bg-violet-50 text-violet-800 ring-violet-200">تاییدکننده</span>
+                        <div class="flex items-center gap-1">
+                            <button type="button" wire:click="startEdit(3)" class="btn btn-ghost btn-sm">تغییر</button>
+                            <!--[if BLOCK]><![endif]-->                                <button type="button" wire:click="newLink(3)" class="btn btn-ghost btn-sm text-accent">لینک دعوت</button>
+                            <!--[if ENDBLOCK]><![endif]-->                            <!--[if BLOCK]><![endif]-->                                <button type="button" wire:click="toggleActive(3)" wire:confirm="دسترسی مدیر پروژه دماوند (نمونه) قطع شود؟" class="btn btn-ghost btn-sm text-red-700 hover:bg-red-50">قطع دسترسی</button>
+                            <!--[if ENDBLOCK]><![endif]-->                        </div>
+                    <!--[if ENDBLOCK]><![endif]-->                </li>
+                            <li wire:key="member-2" class="flex flex-wrap items-center gap-3 px-5 py-3">
+                    <span class="flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-bold bg-sky-100 text-sky-800" aria-hidden="true">و</span>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-x-2 text-sm font-semibold">
+                            ویرایشگر دماوند (نمونه)
+                            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                            <!--[if BLOCK]><![endif]-->                                <span class="text-[13px] font-medium text-accent">مسئول اداری پروژه</span>
+                            <!--[if ENDBLOCK]><![endif]-->                        </div>
+                        <div class="text-xs text-ink-soft">
+                            <span dir="ltr" class="num">0912•••0001</span>
+                            <span class="text-zinc-300">|</span> هنوز وارد نشده
+                            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                        </div>
+                    </div>
+
+                    <!--[if BLOCK]><![endif]-->                        <span class="chip bg-white text-ink-soft ring-line-strong">دماوند</span>
+                        <span class="chip bg-sky-50 text-sky-800 ring-sky-200">ویرایشگر</span>
+                        <div class="flex items-center gap-1">
+                            <button type="button" wire:click="startEdit(2)" class="btn btn-ghost btn-sm">تغییر</button>
+                            <!--[if BLOCK]><![endif]-->                                <button type="button" wire:click="newLink(2)" class="btn btn-ghost btn-sm text-accent">لینک دعوت</button>
+                            <!--[if ENDBLOCK]><![endif]-->                            <!--[if BLOCK]><![endif]-->                                <button type="button" wire:click="toggleActive(2)" wire:confirm="دسترسی ویرایشگر دماوند (نمونه) قطع شود؟" class="btn btn-ghost btn-sm text-red-700 hover:bg-red-50">قطع دسترسی</button>
+                            <!--[if ENDBLOCK]><![endif]-->                        </div>
+                    <!--[if ENDBLOCK]><![endif]-->                </li>
+                            <li wire:key="member-5" class="flex flex-wrap items-center gap-3 px-5 py-3">
+                    <span class="flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-bold bg-emerald-100 text-emerald-800" aria-hidden="true">م</span>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-x-2 text-sm font-semibold">
+                            مدیرعامل (نمونه)
+                            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                            <!--[if BLOCK]><![endif]-->                                <span class="text-[13px] font-medium text-accent">مدیرعامل</span>
+                            <!--[if ENDBLOCK]><![endif]-->                        </div>
+                        <div class="text-xs text-ink-soft">
+                            <span dir="ltr" class="num">0912•••0004</span>
+                            <span class="text-zinc-300">|</span> هنوز وارد نشده
+                            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                        </div>
+                    </div>
+
+                    <!--[if BLOCK]><![endif]-->                        <span class="chip bg-white text-ink-soft ring-line-strong">همه پروژه‌ها</span>
+                        <span class="chip bg-slate-50 text-slate-700 ring-slate-200">مشاهده</span>
+                        <div class="flex items-center gap-1">
+                            <button type="button" wire:click="startEdit(5)" class="btn btn-ghost btn-sm">تغییر</button>
+                            <!--[if BLOCK]><![endif]-->                                <button type="button" wire:click="newLink(5)" class="btn btn-ghost btn-sm text-accent">لینک دعوت</button>
+                            <!--[if ENDBLOCK]><![endif]-->                            <!--[if BLOCK]><![endif]-->                                <button type="button" wire:click="toggleActive(5)" wire:confirm="دسترسی مدیرعامل (نمونه) قطع شود؟" class="btn btn-ghost btn-sm text-red-700 hover:bg-red-50">قطع دسترسی</button>
+                            <!--[if ENDBLOCK]><![endif]-->                        </div>
+                    <!--[if ENDBLOCK]><![endif]-->                </li>
+            <!--[if ENDBLOCK]><![endif]-->        </ul>
+    </section>
+</div>
+    </main>
+
+    <!-- Livewire Scripts -->
+<script src="http://127.0.0.1:8000/livewire-b72df772/livewire.js?id=8ea5922c" data-csrf="x7EBOhFPK7fdpECRLxhuotu5UFtkfvawhKPfkXyS" data-module-url="http://127.0.0.1:8000/livewire-b72df772" data-update-uri="http://127.0.0.1:8000/livewire-b72df772/update" data-navigate-once="true"></script>
+
+
+</body></html>
