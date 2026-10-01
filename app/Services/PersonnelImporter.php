@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\ColumnType;
 use App\Enums\ReviewStatus;
 use App\Enums\Stage;
+use App\Models\ChangeLog;
 use App\Models\Sheet;
 use App\Models\SheetCell;
 use App\Models\SheetColumn;
@@ -247,6 +248,15 @@ final class PersonnelImporter
                 $columnIds[$index] = $column->id;
             }
 
+            // Existing values of the imported columns, loaded once instead of one query per cell.
+            $current = SheetCell::query()
+                ->whereIn('row_id', $existingRows->pluck('id'))
+                ->whereIn('column_id', array_values($columnIds))
+                ->get()
+                ->keyBy(fn (SheetCell $cell) => $cell->row_id.':'.$cell->column_id);
+            $now = now();
+            $inserts = [];
+
             $rowPosition = (int) SheetRow::where('sheet_id', $sheet->id)->max('position');
             foreach ($parsed as $item) {
                 $row = $existingRows->get($item['national']);
@@ -271,15 +281,18 @@ final class PersonnelImporter
                 }
 
                 foreach ($item['values'] as $index => $value) {
-                    $cell = SheetCell::where('row_id', $row->id)->where('column_id', $columnIds[$index])->first();
+                    $cell = $current->get($row->id.':'.$columnIds[$index]);
                     if ($cell) {
                         if ($cell->value !== $value) {
                             $cell->update(['value' => $value, 'version' => $cell->version + 1, 'updated_by' => $user->id]);
                         }
                     } elseif ($value !== null) {
-                        SheetCell::create(['row_id' => $row->id, 'column_id' => $columnIds[$index], 'value' => $value, 'version' => 1, 'updated_by' => $user->id]);
+                        $inserts[] = ['row_id' => $row->id, 'column_id' => $columnIds[$index], 'value' => $value, 'version' => 1, 'updated_by' => $user->id, 'created_at' => $now, 'updated_at' => $now];
                     }
                 }
+            }
+            foreach (array_chunk($inserts, 500) as $chunk) {
+                SheetCell::insert($chunk);
             }
 
             $newColumns = count(array_filter($newColumnTypes));
@@ -410,29 +423,67 @@ final class PersonnelImporter
         }
 
         $changedRows = [];
+        $cellCount = 0;
         try {
-            DB::transaction(function () use ($user, $sheet, $changes, $unknown, &$changedRows) {
+            DB::transaction(function () use ($user, $sheet, $changes, $unknown, &$changedRows, &$cellCount, &$closed) {
+                // Lock the lists being written: an approval that starts now waits for this import (and signs
+                // its result); one that got here first has moved the list on, and its rows are skipped.
+                $projectIds = array_values(array_unique(array_map(fn ($change) => (int) $change[0]->project_id, $changes)));
+                $locked = SheetProject::where('sheet_id', $sheet->id)->whereIn('project_id', $projectIds)
+                    ->with('project')->lockForUpdate()->get()->keyBy('project_id');
+                if ($changes !== [] && $sheet->isPastDeadline()) {
+                    throw ValidationException::withMessages(['importFile' => 'مهلت ویرایش همین حالا تمام شد و چیزی ذخیره نشد.']);
+                }
+                foreach ($locked as $sheetProject) {
+                    if ($sheetProject->stage !== Stage::Draft) {
+                        $closed[$sheetProject->project?->name ?? '—'] = true;
+                    }
+                }
+                $changes = array_values(array_filter($changes, fn ($change) => $locked->get($change[0]->project_id)?->stage === Stage::Draft));
+
+                $current = $changes === [] ? collect() : SheetCell::query()
+                    ->whereIn('row_id', array_values(array_unique(array_map(fn ($change) => $change[0]->id, $changes))))
+                    ->whereIn('column_id', array_values(array_unique(array_map(fn ($change) => $change[1]->id, $changes))))
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy(fn (SheetCell $cell) => $cell->row_id.':'.$cell->column_id);
+
+                $now = now();
+                $ip = app()->runningInConsole() ? null : request()->ip();
+                $inserts = [];
+                $logs = [];
                 foreach ($changes as [$row, $column, $value]) {
-                    $cell = SheetCell::where('row_id', $row->id)->where('column_id', $column->id)->lockForUpdate()->first();
+                    $cell = $current->get($row->id.':'.$column->id);
                     $old = $cell?->value;
-                    if ($old === $value) {
+                    if ($old === $value || (! $cell && $value === null)) {
                         continue;
                     }
                     if ($cell) {
                         $cell->update(['value' => $value, 'version' => $cell->version + 1, 'updated_by' => $user->id]);
                     } else {
-                        SheetCell::create(['row_id' => $row->id, 'column_id' => $column->id, 'value' => $value, 'version' => 1, 'updated_by' => $user->id]);
+                        $inserts[] = ['row_id' => $row->id, 'column_id' => $column->id, 'value' => $value, 'version' => 1, 'updated_by' => $user->id, 'created_at' => $now, 'updated_at' => $now];
                     }
-                    $this->log->record($sheet->id, $user, 'cell.update', $row->id, $column->id, $old, $value, ['source' => 'import']);
+                    $logs[] = [
+                        'sheet_id' => $sheet->id, 'row_id' => $row->id, 'column_id' => $column->id, 'user_id' => $user->id,
+                        'action' => 'cell.update', 'old_value' => $old, 'new_value' => $value,
+                        'meta' => json_encode(['source' => 'import']), 'ip' => $ip, 'created_at' => $now,
+                    ];
+                    $cellCount++;
                     if (! isset($changedRows[$row->id])) {
                         $changedRows[$row->id] = true;
                         $this->editor->resetRejectedReview($user, $sheet, $row);
                     }
                 }
+                foreach (array_chunk($inserts, 500) as $chunk) {
+                    SheetCell::insert($chunk);
+                }
+                foreach (array_chunk($logs, 500) as $chunk) {
+                    ChangeLog::insert($chunk);
+                }
 
                 $this->log->record($sheet->id, $user, 'sheet.import.values', meta: [
                     'rows' => count($changedRows),
-                    'cells' => count($changes),
+                    'cells' => $cellCount,
                     'unknown' => count($unknown),
                 ]);
             });
@@ -444,7 +495,7 @@ final class PersonnelImporter
             'mode' => self::MODE_VALUES,
             'matched' => $matched,
             'rows' => count($changedRows),
-            'cells' => count($changes),
+            'cells' => $cellCount,
             'unknown' => $unknown,
             'unknownColumns' => $unknownColumns,
             'lockedColumns' => $lockedColumns,

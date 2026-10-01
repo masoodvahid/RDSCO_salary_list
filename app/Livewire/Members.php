@@ -208,9 +208,11 @@ class Members extends Component
 
         try {
             DB::transaction(function () use ($user, $role, $projectIds, $name, $jobTitle) {
+                // Lock the member so a concurrent activate/deactivate cannot leave approver slots out of step.
+                $locked = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
                 // Projects first, with the new role, so approver slots are claimed for the final set.
-                $user->syncProjects($projectIds, Role::from($role), $user->is_active);
-                $user->update(['name' => $name, 'role' => $role, 'job_title' => $jobTitle === '' ? null : $jobTitle]);
+                $locked->syncProjects($projectIds, Role::from($role), $locked->is_active);
+                $locked->update(['name' => $name, 'role' => $role, 'job_title' => $jobTitle === '' ? null : $jobTitle]);
             });
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['editProjectIds' => 'یکی از این پروژه‌ها همین حالا تاییدکننده گرفت. دوباره امتحان کنید.']);
@@ -235,7 +237,10 @@ class Members extends Component
         }
 
         try {
-            DB::transaction(fn () => $user->update(['is_active' => ! $user->is_active]));
+            DB::transaction(function () use ($user) {
+                $locked = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
+                $locked->update(['is_active' => ! $locked->is_active]);
+            });
         } catch (UniqueConstraintViolationException) {
             $this->addError('members', "یکی از پروژه‌های {$user->name} تاییدکننده‌ی فعال دیگری دارد؛ اول او را غیرفعال کنید یا آن پروژه را از یکی‌شان بگیرید.");
         }

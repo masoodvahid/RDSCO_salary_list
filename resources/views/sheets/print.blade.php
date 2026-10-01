@@ -6,7 +6,7 @@
     $parts = $layout['parts'];
     $partCount = count($parts);
     $title = 'لیست حقوق و دستمزد '.$sheet->title();
-    $scope = $projectName ? 'پروژه '.$projectName : 'همه پروژه‌ها';
+    $scope = $scopeLabel;
 @endphp
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">

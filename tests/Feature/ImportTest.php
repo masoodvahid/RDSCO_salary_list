@@ -124,6 +124,20 @@ class ImportTest extends TestCase
         $this->assertCount(6, $rows);
     }
 
+    public function test_invisible_marks_around_a_national_code_are_ignored(): void
+    {
+        $code = $this->validNationalCode();
+        $path = $this->csv([
+            ['نام', 'نام خانوادگی', 'کد ملی'],
+            ['علی', 'رضایی', "\u{FEFF}{$code}\u{200F}"],
+        ]);
+
+        $result = app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'csv');
+
+        $this->assertSame(1, $result['created']);
+        $this->assertTrue(SheetRow::where('national_code', $code)->exists());
+    }
+
     public function test_line_numbers_match_the_file_even_with_blank_lines(): void
     {
         $path = tempnam(sys_get_temp_dir(), 'tuka-import-').'.csv';

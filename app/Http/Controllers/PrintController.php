@@ -7,6 +7,7 @@ use App\Services\ApprovalService;
 use App\Services\PrintLayout;
 use App\Services\SheetReport;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 /**
@@ -37,11 +38,23 @@ class PrintController extends Controller
             'sheet' => $sheet,
             'projectId' => $projectId,
             'projectName' => $projectId ? $data['sheetProjects']->first()?->project->name : null,
+            'scopeLabel' => $this->scopeLabel($request, $data['sheetProjects'], $projectId),
             'hashes' => $hashes,
             'layout' => $layout,
             'identity' => $identity,
             'emptyColumns' => $emptyColumns,
             'showEmpty' => $showEmpty,
         ]);
+    }
+
+    /** What the printed list covers, e.g. «پروژه دماوند», «پروژه‌های دماوند، سپهر» or «همه پروژه‌ها». */
+    private function scopeLabel(Request $request, Collection $sheetProjects, ?int $projectId): string
+    {
+        $names = $sheetProjects->pluck('project.name');
+        if ($projectId === null && $request->user()->hasAllProjects()) {
+            return 'همه پروژه‌ها';
+        }
+
+        return ($names->count() === 1 ? 'پروژه ' : 'پروژه‌های ').$names->join('، ');
     }
 }

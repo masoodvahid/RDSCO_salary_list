@@ -49,10 +49,13 @@ class User extends Authenticatable
         return $this->belongsToMany(Project::class)->withPivot('approver_key')->withTimestamps();
     }
 
+    /** @var list<int>|null memo: the grid asks for every cell */
+    private ?array $projectIdCache = null;
+
     /** @return list<int> */
     public function projectIds(): array
     {
-        return $this->projects->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+        return $this->projectIdCache ??= $this->projects->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
     }
 
     /**
@@ -70,6 +73,7 @@ class User extends Authenticatable
         // sync() detaches first, so slots this user gives up are free before new ones are claimed.
         $this->projects()->sync(collect($ids)->mapWithKeys(fn (int $id) => [$id => ['approver_key' => $approver ? $id : null]])->all());
         $this->unsetRelation('projects');
+        $this->projectIdCache = null;
     }
 
     public function refreshApproverKeys(): void

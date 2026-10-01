@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\SheetCell;
 use App\Models\SheetColumn;
+use App\Models\User;
 use App\Services\PrintLayout;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Support\BuildsSheets;
@@ -83,6 +84,18 @@ class PrintTest extends TestCase
         // Unknown values fall back to the defaults.
         $this->get(route('sheets.print', ['sheet' => $this->sheet, 'paper' => 'B5', 'orientation' => 'sideways']))
             ->assertSee('size: A4 landscape', false);
+    }
+
+    public function test_the_title_names_the_projects_the_report_covers(): void
+    {
+        $editor = User::factory()->editor($this->projectA, $this->projectB)->create();
+        $this->actingAs($editor)->get(route('sheets.print', ['sheet' => $this->sheet]))
+            ->assertOk()
+            ->assertSee('پروژه‌های دماوند، سپهر')
+            ->assertDontSee('همه پروژه‌ها');
+
+        $this->actingAs($this->manager)->get(route('sheets.print', ['sheet' => $this->sheet]))->assertSee('همه پروژه‌ها');
+        $this->actingAs($this->manager)->get(route('sheets.print', ['sheet' => $this->sheet, 'project' => $this->projectB->id]))->assertSee('پروژه سپهر');
     }
 
     public function test_layout_keeps_every_column_once_and_in_order(): void

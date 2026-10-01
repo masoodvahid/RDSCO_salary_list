@@ -52,9 +52,16 @@ final class SheetEditor
         $rowIds = array_values(array_unique(array_map(fn ($c) => (int) ($c['row'] ?? 0), $changes)));
         $rows = SheetRow::where('sheet_id', $sheet->id)->whereIn('id', $rowIds)->get()->keyBy('id');
         $columns = SheetColumn::where('sheet_id', $sheet->id)->get()->keyBy('id');
-        $sheetProjects = SheetProject::where('sheet_id', $sheet->id)->get()->keyBy('project_id');
 
-        DB::transaction(function () use ($user, $sheet, $changes, $rows, $columns, $sheetProjects, &$result) {
+        DB::transaction(function () use ($user, $sheet, $changes, $rows, $columns, &$result) {
+            // Lock the lists this batch touches: an approval waits for these edits (and signs them),
+            // or, if it came first, the stage read here is already the approved one.
+            $sheetProjects = SheetProject::where('sheet_id', $sheet->id)
+                ->whereIn('project_id', $rows->pluck('project_id')->filter()->unique()->values())
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('project_id');
+
             foreach ($changes as $change) {
                 $key = [
                     'row' => (int) ($change['row'] ?? 0),

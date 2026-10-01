@@ -43,7 +43,8 @@ final class NationalCode
             return 'کد ملی وارد نشده است';
         }
 
-        $digits = preg_replace('/[\s\-\x{200C}\x{00A0}]/u', '', Digits::toEnglish($raw)) ?? '';
+        // Spaces, dashes and invisible formatting marks (ZWNJ, RLM/LRM, BOM…) that Excel and copy-paste add.
+        $digits = preg_replace('/[\s\-\p{Cf}\x{00A0}]/u', '', Digits::toEnglish($raw)) ?? '';
         if (! preg_match('/^\d+$/', $digits)) {
             return "کد ملی «{$raw}» باید فقط عدد باشد";
         }
