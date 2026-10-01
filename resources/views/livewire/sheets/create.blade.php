@@ -23,12 +23,12 @@
         <div>
             <label for="copy" class="label">ساختار از ماه قبل</label>
             <select id="copy" wire:model="copyFromId" class="input">
-                <option value="">بدون کپی (ستون‌های پیش‌فرض و همه پروژه‌های فعال)</option>
+                <option value="">بدون کپی (فقط اطلاعات پرسنلی و همه پروژه‌های فعال)</option>
                 @foreach ($sheets as $s)
                     <option value="{{ $s->id }}">کپی از {{ $s->title() }}</option>
                 @endforeach
             </select>
-            <p class="hint">پروژه‌ها، ستون‌ها و پرسنل کپی می‌شوند. مقادیر ستون‌های قفل (مثل حقوق پایه) همیشه کپی می‌شوند.</p>
+            <p class="hint">بدون کپی، لیست فقط با نام، نام خانوادگی، کد ملی، کد پرسنلی و پروژه ساخته می‌شود و ستون‌های حقوقی را از «ورود از اکسل» یا «ستون جدید» اضافه می‌کنید. با کپی، پروژه‌ها، ستون‌ها و پرسنل کپی می‌شوند. مقادیر ستون‌های قفل (مثل حقوق پایه) همیشه کپی می‌شوند.</p>
         </div>
 
         <label class="flex items-start gap-2.5 text-sm">

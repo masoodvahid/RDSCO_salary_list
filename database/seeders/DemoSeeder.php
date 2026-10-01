@@ -37,9 +37,24 @@ class DemoSeeder extends Seeder
         }
 
         $sheet = app(SheetBuilder::class)->create($manager, $jy, $jm);
+
+        // Sample payroll columns (a real sheet gets them from the Excel import or adds them by hand).
+        $demoColumns = [
+            ['کارکرد (روز)', 'number', false, '0', '31'],
+            ['اضافه‌کار (ساعت)', 'number', false, '0', '120'],
+            ['حقوق پایه', 'number', true, null, null],
+            ['حق مسکن', 'number', true, null, null],
+            ['بن خواربار', 'number', true, null, null],
+            ['مساعده', 'number', false, null, null],
+            ['توضیحات', 'text', false, null, null],
+        ];
+        foreach ($demoColumns as $i => [$title, $type, $locked, $min, $max]) {
+            SheetColumn::create([
+                'sheet_id' => $sheet->id, 'title' => $title, 'type' => $type, 'is_locked' => $locked,
+                'min_value' => $min, 'max_value' => $max, 'position' => $i + 1,
+            ]);
+        }
         $columns = SheetColumn::where('sheet_id', $sheet->id)->orderBy('position')->get()->keyBy('title');
-        $columns->get('کارکرد (روز)')?->update(['min_value' => '0', 'max_value' => '31']);
-        $columns->get('اضافه‌کار (ساعت)')?->update(['min_value' => '0', 'max_value' => '120']);
 
         $people = [
             ['محمد', 'کریمی', 'دماوند'], ['زهرا', 'احمدی', 'دماوند'], ['علی', 'رضایی', 'دماوند'], ['فاطمه', 'موسوی', 'دماوند'],

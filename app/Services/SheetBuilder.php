@@ -19,16 +19,12 @@ use Illuminate\Validation\ValidationException;
 
 final class SheetBuilder
 {
-    /** Starter columns for a first sheet; every one can be renamed, locked or removed. [title, type, locked] */
-    public const DEFAULT_COLUMNS = [
-        ['کارکرد (روز)', 'number', false],
-        ['اضافه‌کار (ساعت)', 'number', false],
-        ['حقوق پایه', 'number', true],
-        ['حق مسکن', 'number', true],
-        ['بن خواربار', 'number', true],
-        ['مساعده', 'number', false],
-        ['توضیحات', 'text', false],
-    ];
+    /**
+     * Payroll columns a new (not copied) sheet starts with. Empty on purpose: every sheet has the
+     * personnel fields (name, last name, national code, personnel code, project) built in, and the
+     * payroll columns come from the Excel import or are added by hand. [title, type, locked]
+     */
+    public const DEFAULT_COLUMNS = [];
 
     public function __construct(private readonly ChangeLogger $log) {}
 
