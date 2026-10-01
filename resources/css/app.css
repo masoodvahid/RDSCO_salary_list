@@ -438,6 +438,71 @@
     font-size: 0.9em;
 }
 
+/* Page-wide busy layer (public/js/busy.js): frosted glass and the four stage bars bouncing. */
+.busy-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(243 245 249 / 0.5);
+    -webkit-backdrop-filter: blur(5px) saturate(120%);
+    backdrop-filter: blur(5px) saturate(120%);
+    cursor: progress;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+.busy-layer.is-visible {
+    opacity: 1;
+}
+.busy-layer[hidden] {
+    display: none;
+}
+.busy-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 26px;
+    border: 1px solid var(--color-line);
+    border-radius: 16px;
+    background: rgb(255 255 255 / 0.88);
+    box-shadow: 0 14px 36px rgb(30 36 51 / 0.12);
+}
+.busy-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 28px;
+}
+.busy-bars i {
+    display: block;
+    width: 5px;
+    height: 100%;
+    border-radius: 3px;
+    transform-origin: bottom;
+    animation: busy-bounce 0.9s ease-in-out infinite;
+}
+.busy-bars i:nth-child(1) { background: var(--color-stage-draft); animation-delay: -0.36s; }
+.busy-bars i:nth-child(2) { background: var(--color-stage-project); animation-delay: -0.24s; }
+.busy-bars i:nth-child(3) { background: var(--color-stage-hr); animation-delay: -0.12s; }
+.busy-bars i:nth-child(4) { background: var(--color-stage-final); }
+.busy-text {
+    font-size: 13px;
+    color: var(--color-ink-soft);
+}
+@keyframes busy-bounce {
+    0%, 100% { transform: scaleY(0.35); }
+    50% { transform: scaleY(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .busy-bars i {
+        animation: none;
+        transform: scaleY(0.7);
+    }
+}
+
 @media print {
     .no-print {
         display: none !important;
