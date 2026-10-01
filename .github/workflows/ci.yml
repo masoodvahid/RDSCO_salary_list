@@ -65,7 +65,10 @@ jobs:
           DB_PASSWORD: root
 
       - name: Run tests
-        run: php artisan test --log-junit junit.xml
+        shell: bash
+        run: |
+          set -o pipefail
+          php artisan test --log-junit junit.xml 2>&1 | tee test-output.log
         env:
           DB_CONNECTION: mysql
           DB_HOST: 127.0.0.1
@@ -76,4 +79,4 @@ jobs:
 
       - name: Annotate failed tests
         if: failure()
-        run: php .github/report-junit.php junit.xml
+        run: php .github/report-junit.php junit.xml test-output.log
