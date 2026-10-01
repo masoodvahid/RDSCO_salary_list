@@ -67,6 +67,34 @@ final class Digits
         return self::toPersian(str_replace(',', '٬', self::group((string) $value)));
     }
 
+    /**
+     * Exact comparison of two numeric strings (any length, no float rounding): -1, 0 or 1.
+     * Inputs are normalized first; a non-numeric input counts as 0.
+     */
+    public static function compare(string $a, string $b): int
+    {
+        $a = self::normalizeNumber($a);
+        $b = self::normalizeNumber($b);
+        $a = is_string($a) ? $a : '0';
+        $b = is_string($b) ? $b : '0';
+
+        $negativeA = str_starts_with($a, '-');
+        $negativeB = str_starts_with($b, '-');
+        if ($negativeA !== $negativeB) {
+            return $negativeA ? -1 : 1;
+        }
+
+        [$intA, $fracA] = array_pad(explode('.', ltrim($a, '-'), 2), 2, '');
+        [$intB, $fracB] = array_pad(explode('.', ltrim($b, '-'), 2), 2, '');
+        $length = max(strlen($fracA), strlen($fracB));
+
+        $result = strlen($intA) <=> strlen($intB)
+            ?: strcmp($intA, $intB) <=> 0
+            ?: strcmp(str_pad($fracA, $length, '0'), str_pad($fracB, $length, '0')) <=> 0;
+
+        return $negativeA ? -$result : $result;
+    }
+
     /** Adds two canonical numeric strings without float drift when bcmath is available. */
     public static function add(string $a, string $b): string
     {

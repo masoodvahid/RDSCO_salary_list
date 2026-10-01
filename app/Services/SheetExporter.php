@@ -73,7 +73,7 @@ final class SheetExporter
                     $sheetProject->project->name,
                     $sheetProject->stage->label(),
                     $approval->stage->actionLabel(),
-                    $approval->user?->name ?? '',
+                    $approval->user?->nameWithTitle() ?? '',
                     Jalali::formatShort($approval->created_at).' '.$approval->created_at->format('H:i'),
                     $approval->revoked_at ? 'بله' : '',
                 ]));

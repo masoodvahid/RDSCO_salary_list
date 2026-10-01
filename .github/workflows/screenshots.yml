@@ -1,0 +1,71 @@
+name: UI screenshots (temporary)
+
+# Temporary: renders the real pages with demo data and pushes PNGs to the
+# `ci-screenshots` branch for visual review. Remove after review.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    env:
+      APP_URL: http://127.0.0.1:8000
+      DB_CONNECTION: sqlite
+      TUKA_TEST_ADMIN_ENABLED: 'true'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, dom, fileinfo, pdo_sqlite, zip, gd
+          coverage: none
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Install and seed
+        run: |
+          composer install --no-interaction --prefer-dist
+          npm install
+          npm run build
+          cp .env.example .env
+          php artisan key:generate
+          touch database/database.sqlite
+          echo "DB_DATABASE=$PWD/database/database.sqlite" >> "$GITHUB_ENV"
+          export DB_DATABASE=$PWD/database/database.sqlite
+          php artisan migrate --seed --force
+          php artisan tinker --execute='
+            $sheet = App\Models\Sheet::first();
+            $ids = App\Models\SheetProject::where("sheet_id", $sheet->id)->with("project")->get()->keyBy(fn ($sp) => $sp->project->name);
+            $ids["سپهر"]?->update(["stage" => 1]);
+            $ids["آتیه"]?->update(["stage" => 2]);
+            $ids["البرز"]?->update(["stage" => 3]);
+          '
+
+      - name: Capture
+        run: |
+          php artisan serve --host=127.0.0.1 --port=8000 > /tmp/serve.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/login > /dev/null && break; sleep 1; done
+          npm install --no-save playwright@1.56.0
+          npx playwright install --with-deps chromium
+          node .github/screenshots/shoot.cjs
+          tail -n 20 storage/logs/laravel.log | grep -iv "otp" || true
+
+      - name: Push to ci-screenshots
+        if: always()
+        run: |
+          [ -d shots ] || exit 0
+          cd shots
+          git init -q -b ci-screenshots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "UI screenshots for ${GITHUB_SHA}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-screenshots

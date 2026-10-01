@@ -37,6 +37,40 @@ class MembersTest extends TestCase
         $this->assertSame(1, Invitation::where('user_id', $user->id)->count());
     }
 
+    public function test_job_title_is_saved_on_invite_and_edit_and_is_searchable(): void
+    {
+        $manager = User::factory()->manager()->create();
+        $project = Project::factory()->create();
+
+        $component = Livewire::actingAs($manager)
+            ->test(Members::class)
+            ->set('name', 'کاوه مرادی')
+            ->set('jobTitle', '  مدیر   داخلی پروژه ')
+            ->set('mobile', '09121112233')
+            ->set('role', 'approver')
+            ->set('projectId', (string) $project->id)
+            ->call('invite')
+            ->assertHasNoErrors();
+
+        $user = User::where('mobile', '09121112233')->firstOrFail();
+        $this->assertSame('مدیر داخلی پروژه', $user->job_title);
+        $this->assertSame('کاوه مرادی (مدیر داخلی پروژه)', $user->nameWithTitle());
+
+        $component->set('search', 'داخلی')->assertSee('کاوه مرادی')
+            ->set('search', '')
+            ->call('startEdit', $user->id)
+            ->assertSet('editJobTitle', 'مدیر داخلی پروژه')
+            ->set('editJobTitle', 'مسئول حسابداری')
+            ->call('saveEdit')
+            ->assertHasNoErrors();
+
+        $this->assertSame('مسئول حسابداری', $user->fresh()->job_title);
+
+        $component->call('startEdit', $user->id)->set('editJobTitle', '')->call('saveEdit');
+        $this->assertNull($user->fresh()->job_title);
+        $this->assertSame('کاوه مرادی', $user->fresh()->nameWithTitle());
+    }
+
     public function test_a_project_has_at_most_one_active_approver(): void
     {
         $manager = User::factory()->manager()->create();

@@ -107,6 +107,8 @@ final class SheetBuilder
                 'sheet_id' => $to->id,
                 'title' => $column->title,
                 'type' => $column->type instanceof ColumnType ? $column->type->value : $column->type,
+                'min_value' => $column->min_value,
+                'max_value' => $column->max_value,
                 'is_locked' => $column->is_locked,
                 'position' => $column->position,
             ]);

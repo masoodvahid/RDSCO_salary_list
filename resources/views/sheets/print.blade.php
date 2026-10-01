@@ -77,7 +77,7 @@
                     <div class="mb-1.5 font-bold">{{ $sp->project->name }} · {{ $sp->stage->label() }}</div>
                     @forelse ($sp->approvals->whereNull('revoked_at') as $approval)
                         <div class="leading-6">
-                            {{ $approval->stage->actionLabel() }}: <b>{{ $approval->user?->name }}</b>
+                            {{ $approval->stage->actionLabel() }}: <b>{{ $approval->user?->nameWithTitle() }}</b>
                             · {{ Jalali::formatLong($approval->created_at) }} {{ Digits::toPersian($approval->created_at->format('H:i')) }}
                             @if (! hash_equals($approval->data_hash, $hashes[$sp->id] ?? ''))
                                 · <span class="font-semibold text-orange-700">تغییر پس از تایید</span>

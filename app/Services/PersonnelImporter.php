@@ -158,6 +158,11 @@ final class PersonnelImporter
 
                         continue;
                     }
+                    if ($column?->isOutOfRange($value)) {
+                        $problems[] = "مقدار «{$title}» باید {$column->rangeLabel()} باشد";
+
+                        continue;
+                    }
                 } else {
                     $value = $raw === '' ? null : mb_substr($raw, 0, 500);
                 }
