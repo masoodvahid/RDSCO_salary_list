@@ -22,6 +22,8 @@ class DatabaseBackupTest extends TestCase
     public function test_mysql_dump_restores_into_an_empty_database(): void
     {
         if (DB::connection()->getDriverName() !== 'mysql') {
+            // CI runs the suite on MySQL; never let this test be skipped there silently.
+            $this->assertNotSame('true', getenv('GITHUB_ACTIONS'), 'CI must run DatabaseBackupTest on MySQL.');
             $this->markTestSkipped('MySQL only.');
         }
 
