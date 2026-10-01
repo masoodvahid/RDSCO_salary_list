@@ -122,6 +122,6 @@ class Dashboard extends Component
             'stageCounts' => $this->stageCounts(),
             'rejectedStatus' => ReviewStatus::Rejected,
             'projectNames' => $projectIds->isEmpty() ? collect() : Project::whereIn('id', $projectIds)->pluck('name', 'id'),
-        ])->title('شیت‌ها');
+        ])->title('لیست‌های حقوق');
     }
 }

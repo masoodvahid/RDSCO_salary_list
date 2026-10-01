@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="#ffffff">
-    <title>{{ isset($title) ? $title.' · ' : '' }}لیست حقوق توکا</title>
+    <title>{{ isset($title) ? $title.' · توکا' : 'لیست حقوق توکا' }}</title>
     <script src="{{ asset('js/sheet-grid.js') }}?v={{ @filemtime(public_path('js/sheet-grid.js')) }}"></script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
@@ -14,7 +14,7 @@
     @php
         $me = auth()->user();
         $navItems = [
-            ['route' => 'dashboard', 'active' => ['dashboard', 'sheets.*'], 'label' => 'شیت‌ها', 'show' => true],
+            ['route' => 'dashboard', 'active' => ['dashboard', 'sheets.*'], 'label' => 'لیست‌های حقوق', 'show' => true],
             ['route' => 'members', 'active' => ['members'], 'label' => 'اعضا و دسترسی', 'show' => $me?->isManager()],
             ['route' => 'projects', 'active' => ['projects'], 'label' => 'پروژه‌ها', 'show' => $me?->isManager()],
         ];

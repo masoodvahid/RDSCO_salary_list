@@ -190,7 +190,7 @@ final class SheetEditor
                 if (! NationalCode::isValid($normalized)) {
                     $error = 'کد ملی معتبر نیست.';
                 } elseif (SheetRow::where('sheet_id', $sheet->id)->where('national_code', $normalized)->whereKeyNot($row->id)->exists()) {
-                    $error = 'این کد ملی در شیت تکراری است.';
+                    $error = 'این کد ملی در لیست حقوق این ماه تکراری است.';
                 }
                 $value = (string) $normalized;
                 break;
@@ -246,7 +246,7 @@ final class SheetEditor
         if (! NationalCode::isValid($national)) {
             $errors['newRow.national_code'] = 'کد ملی معتبر نیست.';
         } elseif (SheetRow::where('sheet_id', $sheet->id)->where('national_code', $national)->exists()) {
-            $errors['newRow.national_code'] = 'این کد ملی در شیت این ماه وجود دارد.';
+            $errors['newRow.national_code'] = 'این کد ملی در لیست حقوق این ماه وجود دارد.';
         }
         if ($projectId !== null) {
             $sheetProject = SheetProject::where('sheet_id', $sheet->id)->where('project_id', $projectId)->first();
@@ -404,6 +404,36 @@ final class SheetEditor
         });
     }
 
+    /**
+     * Saves a full column order from drag & drop. Order is not part of the signed data
+     * (the approval hash sorts columns by id), so it can change at any stage.
+     *
+     * @param  list<int|string>  $columnIds  every column of the sheet, in the new order
+     */
+    public function reorderColumns(User $user, Sheet $sheet, array $columnIds): void
+    {
+        $this->authorizeManage($user);
+
+        $ids = array_values(array_map('intval', $columnIds));
+        $columns = SheetColumn::where('sheet_id', $sheet->id)->get()->keyBy('id');
+        $known = $columns->keys()->map(fn ($id) => (int) $id)->sort()->values()->all();
+        $given = $ids;
+        sort($given);
+        if ($given !== $known) {
+            throw ValidationException::withMessages(['column' => 'ترتیب ستون‌ها با ستون‌های فعلی نمی‌خواند؛ صفحه را تازه کنید و دوباره امتحان کنید.']);
+        }
+
+        DB::transaction(function () use ($user, $sheet, $ids, $columns) {
+            foreach ($ids as $i => $id) {
+                $column = $columns->get($id);
+                if ($column->position !== $i + 1) {
+                    $column->update(['position' => $i + 1]);
+                }
+            }
+            $this->log->record($sheet->id, $user, 'column.reorder', meta: ['order' => $ids]);
+        });
+    }
+
     /** @param list<int|string> $projectIds */
     public function setMonthProjects(User $user, Sheet $sheet, array $projectIds): void
     {
@@ -480,7 +510,7 @@ final class SheetEditor
     private function assertNoFinalProjects(Sheet $sheet): void
     {
         if (SheetProject::where('sheet_id', $sheet->id)->where('stage', Stage::Final->value)->exists()) {
-            throw ValidationException::withMessages(['column' => 'این شیت لیست نهایی‌شده دارد؛ ساختار ستون‌ها قابل تغییر نیست.']);
+            throw ValidationException::withMessages(['column' => 'لیست حقوق این ماه پروژه‌ی نهایی‌شده دارد؛ ساختار ستون‌ها قابل تغییر نیست.']);
         }
     }
 

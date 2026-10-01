@@ -15,7 +15,7 @@
         <div class="p-6 sm:p-7">
             @if ($inviteName)
                 <h1 class="text-xl font-extrabold">{{ $inviteName }}، خوش آمدید</h1>
-                <p class="mt-1.5 text-sm leading-6 text-ink-soft">برای ورود به شیت حقوق، کد پیامکی را تایید کنید. ثبت‌نام و رمز عبور لازم نیست.</p>
+                <p class="mt-1.5 text-sm leading-6 text-ink-soft">برای ورود به لیست حقوق، کد پیامکی را تایید کنید. ثبت‌نام و رمز عبور لازم نیست.</p>
             @else
                 <h1 class="text-xl font-extrabold">ورود به سامانه</h1>
                 <p class="mt-1.5 text-sm leading-6 text-ink-soft">با شماره موبایلی که مدیر سامانه برایتان ثبت کرده وارد شوید.</p>

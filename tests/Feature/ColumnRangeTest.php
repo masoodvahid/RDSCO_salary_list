@@ -119,6 +119,24 @@ class ColumnRangeTest extends TestCase
         $this->assertSame(['0', '120'], [$copied->min_value, $copied->max_value]);
     }
 
+    public function test_grid_endpoint_refuses_out_of_range_values(): void
+    {
+        $this->openColumn->update(['min_value' => '0', 'max_value' => '31']);
+        $editor = User::factory()->editor($this->projectA)->create();
+
+        Livewire::actingAs($editor)
+            ->test(Grid::class, ['sheet' => $this->sheet])
+            ->call('saveCells', [['row' => $this->rowA->id, 'column' => $this->openColumn->id, 'value' => '45', 'version' => 0]])
+            ->call('saveCells', [['row' => $this->rowA->id, 'column' => $this->openColumn->id, 'value' => '۴۵', 'version' => 0]])
+            ->call('saveCells', [['row' => $this->rowA->id, 'column' => $this->openColumn->id, 'value' => '-1', 'version' => 0]]);
+
+        $this->assertSame(0, SheetCell::count());
+        // The grid script reads the same rule from the column header.
+        $html = Livewire::actingAs($editor)->test(Grid::class, ['sheet' => $this->sheet])->html();
+        $this->assertStringContainsString('data-max="31"', $html);
+        $this->assertStringContainsString('data-range-message="'.e($this->openColumn->fresh()->rangeMessage()).'"', $html);
+    }
+
     public function test_column_dialog_saves_a_range(): void
     {
         Livewire::actingAs($this->manager)

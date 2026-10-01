@@ -305,6 +305,14 @@ class Grid extends Component
         $this->refreshData();
     }
 
+    /** Drag & drop in the header sends the whole new order. */
+    public function reorderColumns(SheetEditor $editor, array $columnIds): void
+    {
+        $editor->reorderColumns($this->user(), $this->sheet, $columnIds);
+        $this->refreshData();
+        $this->flash('ترتیب ستون‌ها ذخیره شد.');
+    }
+
     // ---------------------------------------------------------------- rows (manager)
 
     public function openRow(): void
@@ -641,6 +649,6 @@ class Grid extends Component
             ],
             'draft' => Stage::Draft,
             ...$modalData,
-        ])->title('شیت '.$sheet->title());
+        ])->title('لیست حقوق '.$sheet->title());
     }
 }

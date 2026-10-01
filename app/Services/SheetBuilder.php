@@ -50,7 +50,7 @@ final class SheetBuilder
             throw ValidationException::withMessages(['month' => 'ماه انتخاب‌شده معتبر نیست.']);
         }
         if (Sheet::where('jalali_year', $jy)->where('jalali_month', $jm)->exists()) {
-            throw ValidationException::withMessages(['month' => 'شیت این ماه قبلاً ساخته شده است.']);
+            throw ValidationException::withMessages(['month' => 'لیست حقوق این ماه قبلاً ساخته شده است.']);
         }
 
         return DB::transaction(function () use ($user, $jy, $jm, $copyFrom, $copyAllValues, $deadline) {

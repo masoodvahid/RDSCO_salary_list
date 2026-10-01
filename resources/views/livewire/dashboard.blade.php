@@ -12,7 +12,7 @@
         'stage.submit' => 'لیست را برای تایید فرستاد',
         'row.review' => 'یک رکورد را بررسی کرد',
         'sheet.import' => 'فایل اکسل وارد کرد',
-        'sheet.create' => 'شیت ماه را ساخت',
+        'sheet.create' => 'لیست حقوق ماه را ساخت',
     ];
     $activityTone = [
         'stage.approve' => 'bg-stage-final',
@@ -26,7 +26,7 @@
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6">
     <div class="flex flex-wrap items-end justify-between gap-4">
         <div>
-            <h1 class="page-title">{{ $sheet ? 'شیت حقوق '.$sheet->title() : 'شیت‌های حقوق' }}</h1>
+            <h1 class="page-title">{{ $sheet ? 'لیست حقوق '.$sheet->title() : 'لیست‌های حقوق' }}</h1>
             @if ($sheet)
                 <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-ink-soft">
                     <span>مهلت تکمیل پروژه‌ها: <b class="font-semibold text-ink">{{ Jalali::formatLong($sheet->deadline_at) }}</b></span>
@@ -48,10 +48,10 @@
                 </select>
             @endif
             @if ($sheet)
-                <a href="{{ route('sheets.show', $sheet) }}" wire:navigate class="btn">باز کردن شیت ماه</a>
+                <a href="{{ route('sheets.show', $sheet) }}" wire:navigate class="btn">باز کردن لیست حقوق</a>
             @endif
             @if ($me->isManager())
-                <a href="{{ route('sheets.create') }}" wire:navigate class="btn btn-primary">شیت ماه جدید</a>
+                <a href="{{ route('sheets.create') }}" wire:navigate class="btn btn-primary">لیست حقوق ماه جدید</a>
             @endif
         </div>
     </div>
@@ -59,12 +59,12 @@
     @if (! $sheet)
         <div class="card mt-8 flex flex-col items-center px-6 py-14 text-center">
             <span class="brand-mark scale-150" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-            <p class="mt-6 text-base font-bold">هنوز شیتی ساخته نشده است</p>
+            <p class="mt-6 text-base font-bold">هنوز لیست حقوقی ساخته نشده است</p>
             <p class="mt-1.5 max-w-md text-sm leading-6 text-ink-soft">
                 @if ($me->isManager())
-                    با «شیت ماه جدید» اولین ماه را بسازید؛ بعد پرسنل را از اکسل وارد کنید یا دستی اضافه کنید.
+                    با «لیست حقوق ماه جدید» اولین ماه را بسازید؛ بعد پرسنل را از اکسل وارد کنید یا دستی اضافه کنید.
                 @else
-                    وقتی مدیر شیت ماه را بسازد، اینجا نمایش داده می‌شود.
+                    وقتی مدیر لیست حقوق ماه را بسازد، اینجا نمایش داده می‌شود.
                 @endif
             </p>
         </div>
@@ -157,7 +157,7 @@
                 @if ($this->unassigned)
                     <div class="flex items-center gap-2 border-t border-amber-100 bg-amber-50 px-4 py-2.5 text-[13px] text-amber-900">
                         <span class="size-1.5 rounded-full bg-stage-draft" aria-hidden="true"></span>
-                        {{ Digits::toPersian($this->unassigned) }} نفر هنوز پروژه ندارند. در شیت ماه، ستون «پروژه» را برایشان انتخاب کنید.
+                        {{ Digits::toPersian($this->unassigned) }} نفر هنوز پروژه ندارند. در لیست حقوق ماه، ستون «پروژه» را برایشان انتخاب کنید.
                     </div>
                 @endif
             </section>
