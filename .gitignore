@@ -11,4 +11,16 @@ npm-debug.log
 yarn-error.log
 /.idea
 /.vscode
-/storage/framework/views
+*.log
+.env.production
+.phpactor.json
+/.codex
+/.cursor/
+/.nova
+/.zed
+/auth.json
+/public/fonts-manifest.dev.json
+/public/storage
+/storage/pail
+_ide_helper.php
+Thumbs.db
