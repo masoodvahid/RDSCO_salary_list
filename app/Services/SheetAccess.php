@@ -99,6 +99,23 @@ final class SheetAccess
             && ! $sheet->isPastDeadline($now);
     }
 
+    /**
+     * Editors and project approvers may fill their open columns from an Excel file while at least one
+     * of their projects is still in Draft and the deadline has not passed (managers use the full import).
+     */
+    public function canImportValues(User $user, Sheet $sheet, ?CarbonInterface $now = null): bool
+    {
+        if (! $user->is_active || ! in_array($user->role, [Role::Editor, Role::Approver], true) || $sheet->isPastDeadline($now)) {
+            return false;
+        }
+        $projectIds = $user->projectIds();
+
+        return $projectIds !== [] && SheetProject::where('sheet_id', $sheet->id)
+            ->whereIn('project_id', $projectIds)
+            ->where('stage', Stage::Draft->value)
+            ->exists();
+    }
+
     public function canEditIdentity(User $user, ?SheetProject $sheetProject): bool
     {
         return $this->canManage($user) && ($sheetProject?->stage ?? Stage::Draft) !== Stage::Final;

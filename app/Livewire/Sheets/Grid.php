@@ -517,16 +517,16 @@ class Grid extends Component
         $this->flash('مهلت تکمیل تغییر کرد.');
     }
 
-    public function openImport(): void
+    public function openImport(PersonnelImporter $importer): void
     {
-        $this->authorizeManage();
+        abort_unless($importer->mode($this->user(), $this->sheet) !== null, 403);
         $this->closeModal();
         $this->modal = 'import';
     }
 
     public function import(PersonnelImporter $importer): void
     {
-        $this->authorizeManage();
+        abort_unless($importer->mode($this->user(), $this->sheet) !== null, 403);
         $this->validate(
             ['importFile' => ['required', 'file', 'max:5120', 'extensions:xlsx,csv,txt']],
             [
@@ -664,6 +664,7 @@ class Grid extends Component
             'columns' => $columns,
             'sheetProjects' => $this->sheetProjects,
             'isManager' => $access->canManage($user),
+            'importMode' => app(PersonnelImporter::class)->mode($user, $sheet),
             'currentSp' => $current,
             'approvalTarget' => $current ? $access->approvalTarget($user, $current) : null,
             'canReopen' => $current !== null && $access->canReopen($user, $current),

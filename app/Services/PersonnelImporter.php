@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Enums\ColumnType;
 use App\Enums\ReviewStatus;
 use App\Enums\Stage;
-use App\Models\Project;
 use App\Models\Sheet;
 use App\Models\SheetCell;
 use App\Models\SheetColumn;
@@ -16,21 +15,34 @@ use App\Support\Digits;
 use App\Support\NationalCode;
 use DateTimeInterface;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use OpenSpout\Reader\CSV\Options as CsvOptions;
 use OpenSpout\Reader\CSV\Reader as CsvReader;
+use OpenSpout\Reader\XLSX\Options as XlsxOptions;
 use OpenSpout\Reader\XLSX\Reader as XlsxReader;
 use Throwable;
 
 /**
- * Imports personnel (and optionally values) from XLSX/CSV into a monthly sheet.
- * All-or-nothing: if any row is invalid nothing is written and every problem is reported.
+ * Excel/CSV import into a monthly list.
  *
- * Required headers: نام، نام خانوادگی، کد ملی. Optional: کد پرسنلی، پروژه.
- * Any other header is matched to a sheet column by title, or becomes a new column.
+ *  - Managers ("full"): personnel and values. People are matched by national code (updated or
+ *    created); other headers fill the column with the same title or create a new column.
+ *    Required headers: نام، نام خانوادگی، کد ملی. Optional: کد پرسنلی، پروژه.
+ *  - Editors and project approvers ("values"): values only, for personnel of their own projects whose
+ *    list is still open. Only «کد ملی» is required. National codes outside their projects, locked and
+ *    unknown columns are skipped and reported; personnel fields never change.
+ *
+ * Invalid data is all-or-nothing: if any line has a problem nothing is written and each problem is
+ * reported with its line number, the person and the offending value.
  */
 final class PersonnelImporter
 {
+    public const MODE_FULL = 'full';
+
+    public const MODE_VALUES = 'values';
+
     private const IDENTITY_HEADERS = [
         'نام' => 'first_name',
         'نامخانوادگی' => 'last_name',
@@ -43,64 +55,89 @@ final class PersonnelImporter
         'نامپروژه' => 'project',
     ];
 
+    private const FIELD_LABELS = [
+        'first_name' => ['نام', '«نام»'],
+        'last_name' => ['نام خانوادگی', '«نام خانوادگی» یا «فامیلی»'],
+        'personnel_code' => ['کد پرسنلی', '«کد پرسنلی» یا «شماره پرسنلی»'],
+        'national_code' => ['کد ملی', '«کد ملی» یا «شماره ملی»'],
+        'project' => ['پروژه', '«پروژه»'],
+    ];
+
+    /** Columns our own Excel export adds that are not data: row number and review status. */
+    private const IGNORED_HEADERS = ['ردیف', 'وضعیتبررسی'];
+
     private const MAX_ROWS = 5000;
+
+    private const MAX_ERRORS_SHOWN = 50;
 
     public function __construct(
         private readonly SheetAccess $access,
         private readonly ChangeLogger $log,
+        private readonly SheetEditor $editor,
     ) {}
 
-    /** @return array{created:int, updated:int, columns:int} */
+    /** MODE_FULL for managers, MODE_VALUES for members who can still fill their lists, otherwise null. */
+    public function mode(User $user, Sheet $sheet): ?string
+    {
+        if ($this->access->canManage($user)) {
+            return self::MODE_FULL;
+        }
+
+        return $this->access->canImportValues($user, $sheet) ? self::MODE_VALUES : null;
+    }
+
+    /** @return array<string, mixed> summary for the result dialog; always has 'mode' */
     public function import(User $user, Sheet $sheet, string $path, string $extension): array
     {
-        if (! $this->access->canManage($user)) {
-            throw new AuthorizationException('ورود از اکسل فقط برای مدیر مجاز است.');
+        $mode = $this->mode($user, $sheet);
+        if ($mode === null) {
+            throw new AuthorizationException('ورود از اکسل برای شما مجاز نیست: پروژه‌ی باز یا مهلت ویرایش ندارید.');
         }
 
-        $table = $this->read($path, strtolower($extension));
-        if (count($table) < 2) {
+        $lines = $this->read($path, strtolower($extension));
+        if (count($lines) < 2) {
             throw ValidationException::withMessages(['importFile' => 'فایل خالی است یا فقط سطر عنوان دارد.']);
         }
-
-        $headers = array_map(fn ($h) => trim((string) $h), array_shift($table));
-        $map = [];
-        $extraColumns = [];
-        foreach ($headers as $index => $header) {
-            if ($header === '') {
-                continue;
-            }
-            $key = self::normalizeHeader($header);
-            if (isset(self::IDENTITY_HEADERS[$key])) {
-                $map[self::IDENTITY_HEADERS[$key]] = $index;
-            } else {
-                $extraColumns[$index] = $header;
-            }
+        $header = $lines[array_key_first($lines)];
+        unset($lines[array_key_first($lines)]);
+        if (count($lines) > self::MAX_ROWS) {
+            throw ValidationException::withMessages(['importFile' => 'حداکثر '.Digits::toPersian(self::MAX_ROWS).' ردیف در هر فایل. فایل را چند قسمت کنید.']);
         }
 
-        $missing = array_diff(['first_name', 'last_name', 'national_code'], array_keys($map));
-        if ($missing !== []) {
-            throw ValidationException::withMessages(['importFile' => 'سطر اول فایل باید ستون‌های «نام»، «نام خانوادگی» و «کد ملی» را داشته باشد.']);
-        }
-        if (count($table) > self::MAX_ROWS) {
-            throw ValidationException::withMessages(['importFile' => 'حداکثر '.Digits::toPersian(self::MAX_ROWS).' ردیف در هر فایل.']);
-        }
+        $layout = $this->layout($header, $mode);
 
-        $sheetColumns = SheetColumn::where('sheet_id', $sheet->id)->get();
-        $columnByTitle = $sheetColumns->keyBy(fn ($c) => self::normalizeHeader($c->title));
+        return $mode === self::MODE_FULL
+            ? $this->importPeople($user, $sheet, $lines, $layout)
+            : $this->importValues($user, $sheet, $lines, $layout);
+    }
+
+    // ------------------------------------------------------------------ managers: people + values
+
+    /**
+     * @param  array<int, list<string>>  $lines  keyed by line number in the file
+     * @param  array{map: array<string, int>, extra: array<int, string>}  $layout
+     */
+    private function importPeople(User $user, Sheet $sheet, array $lines, array $layout): array
+    {
+        ['map' => $map, 'extra' => $extraColumns] = $layout;
+
+        $columnByTitle = SheetColumn::where('sheet_id', $sheet->id)->get()->keyBy(fn ($c) => self::normalizeHeader($c->title));
         $sheetProjects = SheetProject::where('sheet_id', $sheet->id)->with('project')->get();
         $projectByName = $sheetProjects->keyBy(fn ($sp) => self::normalizeHeader($sp->project->name));
+        $sheetProjectById = $sheetProjects->keyBy('project_id');
         $existingRows = SheetRow::where('sheet_id', $sheet->id)->get()->keyBy('national_code');
+        $monthProjects = $sheetProjects->pluck('project.name')->sort()->values();
 
-        // Decide the type of columns that will be created.
+        // Type of each column that will be created: number unless a value is not numeric.
         $newColumnTypes = [];
         foreach ($extraColumns as $index => $title) {
             if ($columnByTitle->has(self::normalizeHeader($title))) {
                 continue;
             }
             $numeric = true;
-            foreach ($table as $line) {
+            foreach ($lines as $line) {
                 $value = trim((string) ($line[$index] ?? ''));
-                if ($value !== '' && Digits::normalizeNumber($value) === false) {
+                if ($value !== '' && ! $this->isTotalsLine($line, $map) && Digits::normalizeNumber($value) === false) {
                     $numeric = false;
                     break;
                 }
@@ -108,83 +145,87 @@ final class PersonnelImporter
             $newColumnTypes[$index] = $numeric ? ColumnType::Number : ColumnType::Text;
         }
 
-        // Validate everything first.
         $errors = [];
         $parsed = [];
         $seen = [];
-        foreach ($table as $i => $line) {
-            $lineNo = $i + 2;
-            if (array_filter($line, fn ($v) => trim((string) $v) !== '') === []) {
+        $total = 0;
+        foreach ($lines as $lineNo => $line) {
+            if ($this->isTotalsLine($line, $map)) {
                 continue;
             }
+            $total++;
+            $who = $this->who($line, $map, $lineNo);
 
-            $first = trim((string) ($line[$map['first_name']] ?? ''));
-            $last = trim((string) ($line[$map['last_name']] ?? ''));
-            $national = NationalCode::normalize((string) ($line[$map['national_code']] ?? ''));
-            $personnel = isset($map['personnel_code']) ? trim(Digits::toEnglish((string) ($line[$map['personnel_code']] ?? ''))) : null;
-            $projectName = isset($map['project']) ? trim((string) ($line[$map['project']] ?? '')) : '';
+            $first = $this->cell($line, $map, 'first_name');
+            $last = $this->cell($line, $map, 'last_name');
+            $rawCode = $this->cell($line, $map, 'national_code');
+            $personnel = isset($map['personnel_code']) ? Digits::toEnglish($this->cell($line, $map, 'personnel_code')) : null;
+            $projectName = $this->cell($line, $map, 'project');
 
             $problems = [];
-            if ($first === '' || $last === '') {
-                $problems[] = 'نام یا نام خانوادگی خالی است';
+            if ($first === '') {
+                $problems[] = '«نام» خالی است';
             }
-            if (! NationalCode::isValid($national)) {
-                $problems[] = 'کد ملی نامعتبر';
-            } elseif (isset($seen[$national])) {
-                $problems[] = 'کد ملی تکراری (سطر '.Digits::toPersian($seen[$national]).')';
+            if ($last === '') {
+                $problems[] = '«نام خانوادگی» خالی است';
+            }
+            if ($personnel !== null && mb_strlen($personnel) > 20) {
+                $problems[] = "کد پرسنلی «{$personnel}» بیشتر از ۲۰ کاراکتر است";
             }
 
+            $national = null;
+            if (($problem = NationalCode::problem($rawCode)) !== null) {
+                $problems[] = $problem;
+            } else {
+                $national = NationalCode::normalize($rawCode);
+                if (isset($seen[$national])) {
+                    $problems[] = "کد ملی {$national} تکراری است؛ در {$seen[$national]} هم آمده";
+                }
+            }
+
+            $existing = $national !== null ? $existingRows->get($national) : null;
             $projectId = null;
             if ($projectName !== '') {
                 $sheetProject = $projectByName->get(self::normalizeHeader($projectName));
                 if (! $sheetProject) {
-                    $problems[] = "پروژه «{$projectName}» در پروژه‌های این ماه نیست";
+                    $problems[] = "پروژه «{$projectName}» در پروژه‌های این ماه نیست"
+                        .($monthProjects->isEmpty() ? '' : ' (پروژه‌های این ماه: '.$monthProjects->take(12)->join('، ').')');
                 } elseif ($sheetProject->stage === Stage::Final) {
-                    $problems[] = "لیست پروژه «{$projectName}» نهایی شده است";
+                    $problems[] = "لیست پروژه «{$projectName}» نهایی شده و قابل تغییر نیست";
                 } else {
                     $projectId = $sheetProject->project_id;
                 }
             }
+            if ($existing?->project_id && $sheetProjectById->get($existing->project_id)?->stage === Stage::Final) {
+                $problems[] = 'این نفر در لیست نهایی‌شده‌ی پروژه «'.$sheetProjectById->get($existing->project_id)->project->name.'» است و قابل تغییر نیست';
+            }
 
             $values = [];
             foreach ($extraColumns as $index => $title) {
-                $raw = trim((string) ($line[$index] ?? ''));
                 $column = $columnByTitle->get(self::normalizeHeader($title));
-                $type = $column?->type ?? $newColumnTypes[$index];
-                if ($type === ColumnType::Number) {
-                    $value = Digits::normalizeNumber($raw);
-                    if ($value === false) {
-                        $problems[] = "مقدار «{$title}» عدد نیست";
+                [$value, $problem] = $this->parseValue(trim((string) ($line[$index] ?? '')), $column?->type ?? $newColumnTypes[$index], $column, $title, $index);
+                if ($problem !== null) {
+                    $problems[] = $problem;
 
-                        continue;
-                    }
-                    if ($column?->isOutOfRange($value)) {
-                        $problems[] = "مقدار «{$title}» باید {$column->rangeLabel()} باشد";
-
-                        continue;
-                    }
-                } else {
-                    $value = $raw === '' ? null : mb_substr($raw, 0, 500);
+                    continue;
                 }
                 $values[$index] = $value;
             }
 
+            if ($national !== null && ! isset($seen[$national])) {
+                $seen[$national] = $who;
+            }
             if ($problems !== []) {
-                $errors[] = 'سطر '.Digits::toPersian($lineNo).': '.implode('، ', array_unique($problems));
+                $errors[] = "{$who}: ".implode('؛ ', array_unique($problems)).'.';
 
                 continue;
             }
 
-            $seen[$national] = $lineNo;
             $parsed[] = compact('first', 'last', 'national', 'personnel', 'projectId', 'values');
         }
 
         if ($errors !== []) {
-            $shown = array_slice($errors, 0, 15);
-            if (count($errors) > 15) {
-                $shown[] = 'و '.Digits::toPersian(count($errors) - 15).' خطای دیگر.';
-            }
-            throw ValidationException::withMessages(['importFile' => $shown]);
+            $this->fail($errors, $total);
         }
 
         return DB::transaction(function () use ($user, $sheet, $parsed, $extraColumns, $columnByTitle, $newColumnTypes, $existingRows) {
@@ -244,16 +285,303 @@ final class PersonnelImporter
             $newColumns = count(array_filter($newColumnTypes));
             $this->log->record($sheet->id, $user, 'sheet.import', meta: compact('created', 'updated', 'newColumns'));
 
-            return ['created' => $created, 'updated' => $updated, 'columns' => $newColumns];
+            return ['mode' => self::MODE_FULL, 'created' => $created, 'updated' => $updated, 'columns' => $newColumns];
         });
     }
 
-    /** @return list<list<string>> */
+    // ------------------------------------------------------------------ editors: values of own projects
+
+    /**
+     * @param  array<int, list<string>>  $lines
+     * @param  array{map: array<string, int>, extra: array<int, string>}  $layout
+     */
+    private function importValues(User $user, Sheet $sheet, array $lines, array $layout): array
+    {
+        ['map' => $map, 'extra' => $extraColumns] = $layout;
+
+        $sheetColumns = SheetColumn::where('sheet_id', $sheet->id)->get()->keyBy(fn ($c) => self::normalizeHeader($c->title));
+        $columns = [];
+        $unknownColumns = [];
+        $lockedColumns = [];
+        foreach ($extraColumns as $index => $title) {
+            $column = $sheetColumns->get(self::normalizeHeader($title));
+            if (! $column) {
+                $unknownColumns[] = $title;
+            } elseif ($column->is_locked) {
+                $lockedColumns[] = $column->title;
+            } else {
+                $columns[$index] = $column;
+            }
+        }
+        // Name columns only help identify people in messages; these two are personnel data only managers change.
+        $ignoredFields = array_values(array_map(fn ($field) => self::FIELD_LABELS[$field][0], array_intersect(['personnel_code', 'project'], array_keys($map))));
+
+        if ($columns === []) {
+            $messages = ['در فایل ستونی نیست که شما بتوانید پر کنید.'];
+            if ($unknownColumns !== []) {
+                $messages[] = 'این عنوان‌ها در لیست حقوق این ماه نیستند: '.self::quoteList($unknownColumns).'.';
+            }
+            if ($lockedColumns !== []) {
+                $messages[] = 'این ستون‌ها قفل‌اند و فقط مدیر آن‌ها را پر می‌کند: '.self::quoteList($lockedColumns).'.';
+            }
+            $messages[] = 'عنوان ستون‌های فایل باید مثل عنوان ستون‌های لیست حقوق باشد. ساده‌ترین راه: از همین صفحه «خروجی اکسل» بگیرید، پر کنید و همان را وارد کنید.';
+            throw ValidationException::withMessages(['importFile' => $messages]);
+        }
+
+        $rows = $this->access->visibleRows($user, $sheet)->get()->keyBy('national_code');
+        $sheetProjects = SheetProject::where('sheet_id', $sheet->id)->with('project')->get()->keyBy('project_id');
+        $cells = SheetCell::whereIn('row_id', $rows->pluck('id'))
+            ->whereIn('column_id', array_map(fn (SheetColumn $c) => $c->id, $columns))
+            ->get()
+            ->keyBy(fn (SheetCell $c) => $c->row_id.':'.$c->column_id);
+
+        $errors = [];
+        $seen = [];
+        $unknown = [];
+        $closed = [];
+        $changes = [];
+        $matched = 0;
+        $total = 0;
+        foreach ($lines as $lineNo => $line) {
+            if ($this->isTotalsLine($line, $map)) {
+                continue;
+            }
+            $total++;
+            $who = $this->who($line, $map, $lineNo);
+
+            $rawCode = $this->cell($line, $map, 'national_code');
+            if (($problem = NationalCode::problem($rawCode)) !== null) {
+                $errors[] = "{$who}: {$problem}.";
+
+                continue;
+            }
+            $code = NationalCode::normalize($rawCode);
+            if (isset($seen[$code])) {
+                $errors[] = "{$who}: کد ملی {$code} تکراری است؛ در {$seen[$code]} هم آمده.";
+
+                continue;
+            }
+            $seen[$code] = $who;
+
+            $row = $rows->get($code);
+            if (! $row) {
+                $unknown[] = ['code' => $code, 'name' => $this->fullName($line, $map), 'line' => $lineNo];
+
+                continue;
+            }
+
+            $sheetProject = $sheetProjects->get($row->project_id);
+            $problems = [];
+            $rowValues = [];
+            foreach ($columns as $index => $column) {
+                if (! $this->access->canEditCell($user, $sheet, $row, $column, $sheetProject)) {
+                    $closed[$sheetProject?->project?->name ?? '—'] = true;
+                    $rowValues = null;
+                    break;
+                }
+                [$value, $problem] = $this->parseValue(trim((string) ($line[$index] ?? '')), $column->type, $column, $column->title, $index);
+                if ($problem !== null) {
+                    $problems[] = $problem;
+
+                    continue;
+                }
+                $rowValues[] = [$column, $value];
+            }
+            if ($rowValues === null) {
+                continue; // the list of this project is no longer open; reported once per project
+            }
+            if ($problems !== []) {
+                $errors[] = "{$who}: ".implode('؛ ', $problems).'.';
+
+                continue;
+            }
+
+            $matched++;
+            foreach ($rowValues as [$column, $value]) {
+                $cell = $cells->get($row->id.':'.$column->id);
+                if ($cell?->value !== $value && ($cell || $value !== null)) {
+                    $changes[] = [$row, $column, $value];
+                }
+            }
+        }
+
+        if ($errors !== []) {
+            $this->fail($errors, $total);
+        }
+
+        $changedRows = [];
+        try {
+            DB::transaction(function () use ($user, $sheet, $changes, $unknown, &$changedRows) {
+                foreach ($changes as [$row, $column, $value]) {
+                    $cell = SheetCell::where('row_id', $row->id)->where('column_id', $column->id)->lockForUpdate()->first();
+                    $old = $cell?->value;
+                    if ($old === $value) {
+                        continue;
+                    }
+                    if ($cell) {
+                        $cell->update(['value' => $value, 'version' => $cell->version + 1, 'updated_by' => $user->id]);
+                    } else {
+                        SheetCell::create(['row_id' => $row->id, 'column_id' => $column->id, 'value' => $value, 'version' => 1, 'updated_by' => $user->id]);
+                    }
+                    $this->log->record($sheet->id, $user, 'cell.update', $row->id, $column->id, $old, $value, ['source' => 'import']);
+                    if (! isset($changedRows[$row->id])) {
+                        $changedRows[$row->id] = true;
+                        $this->editor->resetRejectedReview($user, $sheet, $row);
+                    }
+                }
+
+                $this->log->record($sheet->id, $user, 'sheet.import.values', meta: [
+                    'rows' => count($changedRows),
+                    'cells' => count($changes),
+                    'unknown' => count($unknown),
+                ]);
+            });
+        } catch (UniqueConstraintViolationException) {
+            throw ValidationException::withMessages(['importFile' => 'هم‌زمان کس دیگری همین خانه‌ها را ثبت کرد و چیزی ذخیره نشد. فایل را دوباره وارد کنید.']);
+        }
+
+        return [
+            'mode' => self::MODE_VALUES,
+            'matched' => $matched,
+            'rows' => count($changedRows),
+            'cells' => count($changes),
+            'unknown' => $unknown,
+            'unknownColumns' => $unknownColumns,
+            'lockedColumns' => $lockedColumns,
+            'ignoredFields' => $ignoredFields,
+            'closedProjects' => array_keys($closed),
+            'manyProjects' => count($user->projectIds()) > 1,
+        ];
+    }
+
+    // ------------------------------------------------------------------ shared
+
+    /**
+     * Maps the header line: identity fields by alias, everything else as a column title.
+     *
+     * @param  list<string>  $header
+     * @return array{map: array<string, int>, extra: array<int, string>}
+     */
+    private function layout(array $header, string $mode): array
+    {
+        $headers = array_map(fn ($h) => trim((string) $h), $header);
+        $map = [];
+        $extra = [];
+        $taken = [];
+        $errors = [];
+
+        foreach ($headers as $index => $title) {
+            if ($title === '') {
+                continue;
+            }
+            $key = self::normalizeHeader($title);
+            if (in_array($key, self::IGNORED_HEADERS, true)) {
+                continue;
+            }
+            $field = self::IDENTITY_HEADERS[$key] ?? null;
+            $slot = $field !== null ? "field:{$field}" : "column:{$key}";
+            if (isset($taken[$slot])) {
+                $errors[] = "ستون «{$title}» دو بار در فایل آمده (ستون‌های ".self::columnLetter($taken[$slot]).' و '.self::columnLetter($index).')؛ یکی را حذف یا عنوانش را عوض کنید.';
+
+                continue;
+            }
+            $taken[$slot] = $index;
+            if ($field !== null) {
+                $map[$field] = $index;
+            } else {
+                $extra[$index] = $title;
+            }
+        }
+
+        $required = $mode === self::MODE_FULL ? ['first_name', 'last_name', 'national_code'] : ['national_code'];
+        $missing = array_values(array_diff($required, array_keys($map)));
+        foreach ($missing as $field) {
+            [$label, $accepted] = self::FIELD_LABELS[$field];
+            $errors[] = "سطر اول فایل (عنوان ستون‌ها) ستون «{$label}» را ندارد. عنوان قابل قبول: {$accepted}.";
+        }
+        if ($missing !== []) {
+            $found = array_values(array_filter($headers, fn ($h) => $h !== ''));
+            $errors[] = 'عنوان‌هایی که در سطر اول فایل پیدا شد: '.self::quoteList(array_slice($found, 0, 25)).(count($found) > 25 ? ' و …' : '').'.';
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages(['importFile' => $errors]);
+        }
+
+        return ['map' => $map, 'extra' => $extra];
+    }
+
+    /** @return array{0: string|null, 1: string|null} [stored value, problem] */
+    private function parseValue(string $raw, ColumnType $type, ?SheetColumn $column, string $title, int $index): array
+    {
+        $ref = 'ستون '.self::columnLetter($index)." «{$title}»";
+
+        if ($type === ColumnType::Number) {
+            $value = Digits::normalizeNumber($raw);
+            if ($value === false) {
+                return [null, "{$ref}: «{$raw}» عدد نیست"];
+            }
+            if ($column?->isOutOfRange($value)) {
+                return [null, "{$ref}: ".Digits::money($value)." مجاز نیست؛ باید {$column->rangeLabel()} باشد"];
+            }
+
+            return [$value, null];
+        }
+
+        return [$raw === '' ? null : mb_substr($raw, 0, 500), null];
+    }
+
+    /** @param list<string> $errors one entry per line with problems */
+    private function fail(array $errors, int $total): never
+    {
+        $shown = array_slice($errors, 0, self::MAX_ERRORS_SHOWN);
+        if (count($errors) > self::MAX_ERRORS_SHOWN) {
+            $shown[] = 'و '.Digits::toPersian(count($errors) - self::MAX_ERRORS_SHOWN).' سطر دیگر با خطا.';
+        }
+
+        throw ValidationException::withMessages([
+            'importFile' => Digits::toPersian(count($errors)).' سطر از '.Digits::toPersian($total).' سطر فایل خطا دارد و هیچ اطلاعاتی ذخیره نشد. این سطرها را در فایل اصلاح و دوباره بارگذاری کنید:',
+            'importRows' => $shown,
+        ]);
+    }
+
+    /** @param list<string> $line */
+    private function cell(array $line, array $map, string $field): string
+    {
+        return isset($map[$field]) ? trim((string) ($line[$map[$field]] ?? '')) : '';
+    }
+
+    private function fullName(array $line, array $map): string
+    {
+        return trim($this->cell($line, $map, 'first_name').' '.$this->cell($line, $map, 'last_name'));
+    }
+
+    /** "سطر ۱۲ (علی رضایی)" — the line number in Excel plus the name, so the line is easy to find. */
+    private function who(array $line, array $map, int $lineNo): string
+    {
+        $name = $this->fullName($line, $map);
+
+        return 'سطر '.Digits::toPersian($lineNo).($name !== '' ? " ({$name})" : '');
+    }
+
+    /** The totals line of our own export: «جمع» in a name column and no national code. */
+    private function isTotalsLine(array $line, array $map): bool
+    {
+        return $this->cell($line, $map, 'national_code') === ''
+            && in_array('جمع', [$this->cell($line, $map, 'first_name'), $this->cell($line, $map, 'last_name')], true);
+    }
+
+    /**
+     * Non-empty lines of the first sheet, keyed by their line number in the file.
+     *
+     * @return array<int, list<string>>
+     */
     private function read(string $path, string $extension): array
     {
         $reader = match ($extension) {
-            'xlsx' => new XlsxReader,
-            'csv', 'txt' => new CsvReader,
+            // Empty rows are kept so line numbers in messages match the row numbers in Excel.
+            'xlsx' => new XlsxReader(new XlsxOptions(SHOULD_PRESERVE_EMPTY_ROWS: true)),
+            'csv', 'txt' => new CsvReader(new CsvOptions(SHOULD_PRESERVE_EMPTY_ROWS: true)),
             default => throw ValidationException::withMessages(['importFile' => 'فقط فایل XLSX یا CSV پذیرفته می‌شود.']),
         };
 
@@ -261,8 +589,20 @@ final class PersonnelImporter
         try {
             $reader->open($path);
             foreach ($reader->getSheetIterator() as $sheet) {
+                $lineNo = 0;
+                $emptyRun = 0;
                 foreach ($sheet->getRowIterator() as $row) {
-                    $rows[] = array_map(fn ($value) => self::stringify($value), $row->toArray());
+                    $lineNo++;
+                    $cells = array_map(fn ($value) => self::stringify($value), $row->toArray());
+                    if (array_filter($cells, fn ($v) => trim($v) !== '') === []) {
+                        if (++$emptyRun > 1000) {
+                            break; // formatted but empty rows down the sheet
+                        }
+
+                        continue;
+                    }
+                    $emptyRun = 0;
+                    $rows[$lineNo] = $cells;
                     if (count($rows) > self::MAX_ROWS + 1) {
                         break;
                     }
@@ -274,11 +614,6 @@ final class PersonnelImporter
             throw $e;
         } catch (Throwable) {
             throw ValidationException::withMessages(['importFile' => 'فایل خوانده نشد. فایل را در اکسل با قالب XLSX ذخیره کنید و دوباره امتحان کنید.']);
-        }
-
-        // Drop leading empty lines so the first non-empty line is the header.
-        while ($rows !== [] && array_filter($rows[0], fn ($v) => $v !== '') === []) {
-            array_shift($rows);
         }
 
         return $rows;
@@ -306,6 +641,23 @@ final class PersonnelImporter
         }
 
         return '';
+    }
+
+    /** Excel column letter of a 0-based index: 0 → A, 26 → AA. */
+    public static function columnLetter(int $index): string
+    {
+        $letters = '';
+        for ($n = $index + 1; $n > 0; $n = intdiv($n - 1, 26)) {
+            $letters = chr(65 + ($n - 1) % 26).$letters;
+        }
+
+        return $letters;
+    }
+
+    /** @param list<string> $items */
+    private static function quoteList(array $items): string
+    {
+        return implode('، ', array_map(fn ($item) => "«{$item}»", $items));
     }
 
     /** Compares Persian headers loosely: no spaces/ZWNJ, Arabic ي/ك folded to Persian. */

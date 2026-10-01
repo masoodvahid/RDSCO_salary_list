@@ -66,6 +66,10 @@
                     <button type="button" wire:click="openRow" class="btn">{!! $plusIcon !!} ردیف جدید</button>
                     <button type="button" wire:click="openProjects" class="btn">پروژه‌های این ماه <span class="rounded-full bg-accent-soft px-1.5 text-xs font-bold text-accent">{{ Digits::toPersian($sheetProjects->count()) }}</span></button>
                 @endif
+                @if ($importMode === 'values')
+                    <span class="mx-1 hidden h-6 w-px bg-line sm:block" aria-hidden="true"></span>
+                    <button type="button" wire:click="openImport" class="btn">ورود مقادیر از اکسل</button>
+                @endif
                 <span class="mx-1 hidden h-6 w-px bg-line sm:block" aria-hidden="true"></span>
                 <a href="{{ route('sheets.export', ['sheet' => $sheet->id, 'project' => $this->currentProjectId()]) }}" class="btn btn-ghost text-emerald-700 hover:bg-emerald-50">خروجی اکسل</a>
                 <a href="{{ route('sheets.print', ['sheet' => $sheet->id, 'project' => $this->currentProjectId()]) }}" target="_blank" class="btn btn-ghost text-ink-soft">چاپ / PDF</a>
@@ -629,26 +633,98 @@
     @endif
 
     @if ($modal === 'import')
-        <x-modal title="ورود پرسنل از اکسل" close="closeModal">
-            @if ($importResult)
+        @php $valuesMode = $importMode === 'values'; @endphp
+        <x-modal :title="$valuesMode ? 'ورود مقادیر از اکسل' : 'ورود پرسنل از اکسل'" close="closeModal" width="max-w-2xl">
+            @if ($importResult && ($importResult['mode'] ?? 'full') === 'values')
+                @php
+                    $r = $importResult;
+                    $yourProjects = ($r['manyProjects'] ?? false) ? 'پروژه‌های شما' : 'پروژه‌ی شما';
+                @endphp
+                <div class="space-y-3 text-sm leading-7">
+                    <div class="rounded-xl bg-emerald-50 px-4 py-3 text-emerald-900">
+                        @if ($r['cells'])
+                            {{ Digits::toPersian($r['cells']) }} خانه در {{ Digits::toPersian($r['rows']) }} ردیف به‌روزرسانی شد.
+                        @elseif ($r['matched'])
+                            مقادیر فایل با لیست یکسان بود؛ چیزی تغییر نکرد.
+                        @else
+                            هیچ ردیفی از فایل وارد نشد.
+                        @endif
+                        <span class="text-emerald-900/75">({{ Digits::toPersian($r['matched']) }} نفر از فایل با {{ $yourProjects }} تطبیق داده شد.)</span>
+                    </div>
+
+                    @if ($r['unknown'])
+                        <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950" x-data="{ copied: false }">
+                            <p class="font-semibold">این {{ Digits::toPersian(count($r['unknown'])) }} کد ملی در {{ $yourProjects }} تعریف نشده‌اند و وارد نشدند:</p>
+                            <ul class="mt-2 max-h-48 space-y-0.5 overflow-y-auto rounded-lg bg-white/70 px-3 py-2 text-[13px]" x-ref="unknown">
+                                @foreach ($r['unknown'] as $item)
+                                    <li><span class="num font-semibold" dir="ltr">{{ $item['code'] }}</span>@if ($item['name'] !== '') <span class="text-amber-900/80">— {{ $item['name'] }}</span>@endif <span class="text-xs text-amber-900/60">(سطر {{ Digits::toPersian($item['line']) }})</span></li>
+                                @endforeach
+                            </ul>
+                            <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                <p class="text-[13px]">لطفاً از مدیر بخواهید ابتدا این کد ملی‌ها را به {{ $yourProjects }} تخصیص دهد، بعد فایل را دوباره وارد کنید.</p>
+                                <button type="button" class="btn btn-sm" data-unknown-codes="{{ collect($r['unknown'])->map(fn ($i) => trim($i['code'].' '.$i['name']))->join("\n") }}"
+                                        x-on:click="navigator.clipboard.writeText($el.dataset.unknownCodes); copied = true; setTimeout(() => copied = false, 2000)">
+                                    <span x-show="!copied">کپی فهرست</span><span x-show="copied" x-cloak>کپی شد</span>
+                                </button>
+                            </div>
+                        </div>
+                    @endif
+
+                    @if ($r['closedProjects'])
+                        <p class="rounded-xl bg-zinc-50 px-4 py-2.5 text-[13px] text-ink-soft">لیست {{ collect($r['closedProjects'])->map(fn ($n) => 'پروژه '.$n)->join('، ') }} تایید شده و دیگر قابل ویرایش نیست؛ ردیف‌های آن وارد نشدند.</p>
+                    @endif
+                    @if ($r['lockedColumns'] || $r['unknownColumns'] || $r['ignoredFields'])
+                        <ul class="list-disc space-y-1 rounded-xl bg-zinc-50 py-2.5 pe-4 ps-8 text-[13px] text-ink-soft">
+                            @if ($r['lockedColumns'])
+                                <li>ستون‌های قفل (فقط مدیر) نادیده گرفته شد: {{ collect($r['lockedColumns'])->map(fn ($t) => "«{$t}»")->join('، ') }}</li>
+                            @endif
+                            @if ($r['unknownColumns'])
+                                <li>این ستون‌ها در لیست حقوق نیستند و نادیده گرفته شد: {{ collect($r['unknownColumns'])->map(fn ($t) => "«{$t}»")->join('، ') }}</li>
+                            @endif
+                            @if ($r['ignoredFields'])
+                                <li>{{ collect($r['ignoredFields'])->map(fn ($t) => "«{$t}»")->join(' و ') }} فقط برای اطلاع خوانده شد؛ اطلاعات پرسنلی را فقط مدیر تغییر می‌دهد.</li>
+                            @endif
+                        </ul>
+                    @endif
+                </div>
+            @elseif ($importResult)
                 <div class="rounded-xl bg-emerald-50 px-4 py-3 text-sm leading-7 text-emerald-900">
                     {{ Digits::toPersian($importResult['created']) }} ردیف جدید و {{ Digits::toPersian($importResult['updated']) }} ردیف به‌روزرسانی شد.
                     @if ($importResult['columns']) {{ Digits::toPersian($importResult['columns']) }} ستون جدید هم ساخته شد. @endif
                 </div>
             @else
                 <form wire:submit="import" id="import-form" class="space-y-3">
-                    <p class="text-[13px] leading-6 text-ink-soft">
-                        سطر اول فایل عنوان ستون‌هاست. لازم: <b>نام</b>، <b>نام خانوادگی</b>، <b>کد ملی</b>. اختیاری: <b>کد پرسنلی</b>، <b>پروژه</b>.
-                        ستون‌های دیگر با ستون هم‌نام در لیست حقوق پر می‌شوند یا ستون تازه می‌سازند. پرسنل موجود (بر اساس کد ملی) به‌روزرسانی می‌شوند.
-                    </p>
+                    @if ($valuesMode)
+                        @php $openTitles = $columns->where('is_locked', false)->pluck('title'); @endphp
+                        <div class="space-y-1.5 text-[13px] leading-6 text-ink-soft">
+                            <p>فایل باید ستون <b class="text-ink">کد ملی</b> داشته باشد؛ هر سطر با همین کد به پرسنل پروژه‌ی شما وصل می‌شود. کد ملی‌هایی که در پروژه‌ی شما نیستند وارد نمی‌شوند و در پایان فهرستشان را می‌بینید.</p>
+                            <p>بقیه‌ی ستون‌ها با عنوان ستون‌های لیست حقوق تطبیق داده می‌شوند. ستون‌هایی که شما می‌توانید پر کنید:
+                                @if ($openTitles->isEmpty()) <span>(ستون بازی وجود ندارد)</span> @else {!! $openTitles->map(fn ($t) => '<b class="text-ink">'.e($t).'</b>')->join('، ') !!}. @endif
+                            </p>
+                            <p>نام و اطلاعات پرسنلی تغییر نمی‌کند. خانه‌ی خالی در فایل، مقدار همان خانه را پاک می‌کند. ساده‌ترین راه: «خروجی اکسل» بگیرید، پر کنید و همان را وارد کنید.</p>
+                        </div>
+                    @else
+                        <p class="text-[13px] leading-6 text-ink-soft">
+                            سطر اول فایل عنوان ستون‌هاست. لازم: <b>نام</b>، <b>نام خانوادگی</b>، <b>کد ملی</b>. اختیاری: <b>کد پرسنلی</b>، <b>پروژه</b>.
+                            ستون‌های دیگر با ستون هم‌نام در لیست حقوق پر می‌شوند یا ستون تازه می‌سازند. پرسنل موجود (بر اساس کد ملی) به‌روزرسانی می‌شوند. فایل «خروجی اکسل» همین صفحه را هم می‌شود دوباره وارد کرد.
+                        </p>
+                    @endif
                     <input type="file" wire:model="importFile" accept=".xlsx,.csv" class="block w-full rounded-lg border border-dashed border-line-strong p-3 text-sm file:me-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-2 file:text-white">
                     <div wire:loading wire:target="importFile" class="text-xs text-ink-soft">در حال بارگذاری…</div>
-                    @if ($errors->has('importFile'))
-                        <ul class="error list-disc space-y-0.5 ps-5">
+                    <div wire:loading wire:target="import" class="text-xs text-ink-soft">در حال بررسی فایل…</div>
+                    @if ($errors->has('importFile') || $errors->has('importRows'))
+                        <div class="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-[13px] leading-6 text-red-800" role="alert">
                             @foreach ($errors->get('importFile') as $message)
-                                <li>{{ $message }}</li>
+                                <p @class(['font-semibold' => $loop->first])>{{ $message }}</p>
                             @endforeach
-                        </ul>
+                            @if ($errors->has('importRows'))
+                                <ul class="mt-2 max-h-64 list-disc space-y-1 overflow-y-auto ps-5">
+                                    @foreach ($errors->get('importRows') as $message)
+                                        <li>{{ $message }}</li>
+                                    @endforeach
+                                </ul>
+                            @endif
+                        </div>
                     @endif
                 </form>
             @endif

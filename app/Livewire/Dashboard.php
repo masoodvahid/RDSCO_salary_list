@@ -97,7 +97,7 @@ class Dashboard extends Component
         }
 
         return ChangeLog::where('sheet_id', $this->sheet->id)
-            ->whereIn('action', ['stage.approve', 'stage.reopen', 'stage.return', 'stage.submit', 'row.review', 'sheet.import', 'sheet.create'])
+            ->whereIn('action', ['stage.approve', 'stage.reopen', 'stage.return', 'stage.submit', 'row.review', 'sheet.import', 'sheet.import.values', 'sheet.create'])
             ->with('user')
             ->latest('id')
             ->limit(12)

@@ -32,6 +32,39 @@ final class NationalCode
         return $remainder < 2 ? $check === $remainder : $check === 11 - $remainder;
     }
 
+    /**
+     * Why a value is not a usable national code (in Persian, quoting the value), or null when it is valid.
+     * Spaces and dashes are allowed; 8–9 digits are accepted because Excel drops leading zeros.
+     */
+    public static function problem(?string $value): ?string
+    {
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return 'کد ملی وارد نشده است';
+        }
+
+        $digits = preg_replace('/[\s\-\x{200C}\x{00A0}]/u', '', Digits::toEnglish($raw)) ?? '';
+        if (! preg_match('/^\d+$/', $digits)) {
+            return "کد ملی «{$raw}» باید فقط عدد باشد";
+        }
+        $length = strlen($digits);
+        if ($length > 10) {
+            return "کد ملی «{$raw}» بیشتر از ۱۰ رقم است (".Digits::toPersian($length).' رقم)';
+        }
+        if ($length < 8) {
+            return "کد ملی «{$raw}» کمتر از ۱۰ رقم است (".Digits::toPersian($length).' رقم)';
+        }
+        $code = str_pad($digits, 10, '0', STR_PAD_LEFT);
+        if (preg_match('/^(\d)\1{9}$/', $code)) {
+            return "کد ملی «{$raw}» معتبر نیست (همه‌ی رقم‌ها یکسان است)";
+        }
+        if (! self::isValid($code)) {
+            return "کد ملی «{$raw}» معتبر نیست؛ رقم کنترل (رقم آخر) با بقیه نمی‌خواند و احتمالاً یک رقم اشتباه تایپ شده";
+        }
+
+        return null;
+    }
+
     /** Builds a valid code from 9 digits (used by seeders and tests). */
     public static function fromNineDigits(string $nine): string
     {

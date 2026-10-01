@@ -212,7 +212,8 @@ final class SheetEditor
         $result['saved'][] = $key + ['value' => $stored, 'version' => 0];
     }
 
-    private function resetRejectedReview(User $user, Sheet $sheet, SheetRow $row): void
+    /** A value change on a rejected record sends it back for review (also used by the Excel import). */
+    public function resetRejectedReview(User $user, Sheet $sheet, SheetRow $row): void
     {
         if ($row->review_status !== ReviewStatus::Rejected) {
             return;
