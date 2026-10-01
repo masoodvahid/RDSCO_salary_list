@@ -2,6 +2,8 @@
 /node_modules
 /public/build
 /public/hot
+/public/vendor
+/dist
 /storage/*.key
 /vendor
 .env
@@ -24,3 +26,5 @@ yarn-error.log
 /storage/pail
 _ide_helper.php
 Thumbs.db
+/junit.xml
+/test-output.log

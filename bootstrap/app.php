@@ -16,6 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias(['active' => EnsureUserIsActive::class]);
         $middleware->redirectGuestsTo(fn () => route('login'));
         $middleware->redirectUsersTo(fn () => route('dashboard'));
+        // The in-app updater keeps working while the site is in maintenance mode during an update.
+        $middleware->preventRequestsDuringMaintenance(except: ['system/update', 'system/update/*']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

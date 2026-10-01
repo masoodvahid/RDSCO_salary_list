@@ -377,6 +377,35 @@
     user-select: none;
 }
 
+/* Release notes on the update page (Markdown from GitHub). */
+.release-notes > * + * {
+    margin-top: 0.5em;
+}
+.release-notes h1,
+.release-notes h2,
+.release-notes h3 {
+    font-weight: 700;
+    color: var(--color-ink);
+}
+.release-notes ul {
+    list-style: disc;
+    padding-inline-start: 1.25rem;
+}
+.release-notes ol {
+    list-style: decimal;
+    padding-inline-start: 1.25rem;
+}
+.release-notes a {
+    color: var(--color-accent);
+    text-decoration: underline;
+}
+.release-notes code {
+    border-radius: 4px;
+    background: var(--color-canvas);
+    padding: 0 0.3em;
+    font-size: 0.9em;
+}
+
 @media print {
     .no-print {
         display: none !important;

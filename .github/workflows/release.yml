@@ -1,0 +1,99 @@
+name: Release package
+
+# Builds the deployable package for shared hosting and the in-app updater:
+# vendor (no dev), compiled assets and published Livewire scripts, in one zip.
+# On a published GitHub Release the zip and its SHA-256 are attached to that release.
+# On pull requests the package is only built and checked.
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, dom, fileinfo, zip, xmlreader, xmlwriter, pdo_sqlite, pdo_mysql
+          coverage: none
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-ci.${GITHUB_SHA::7}"
+          fi
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' || { echo "::error::Tag must look like v1.2.0 (got $GITHUB_REF_NAME)"; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Install dependencies and build assets
+        run: |
+          composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
+          npm ci
+          npm run build
+          cp .env.example .env
+          php artisan key:generate
+          php artisan vendor:publish --tag=livewire:assets --force
+          test -f public/vendor/livewire/manifest.json || { echo "::error::Livewire assets were not published"; exit 1; }
+
+      - name: Smoke test (migrate + optimize in production mode)
+        env:
+          APP_ENV: production
+          APP_DEBUG: 'false'
+          DB_CONNECTION: sqlite
+          DB_DATABASE: /tmp/smoke.sqlite
+        run: |
+          touch /tmp/smoke.sqlite
+          php artisan migrate --force
+          php artisan optimize
+          php artisan route:list --path=system/update
+          php artisan optimize:clear
+          php artisan package:discover
+          rm .env
+
+      - name: Package
+        run: |
+          echo "$VERSION" > VERSION
+          php -r '
+            $composer = json_decode(file_get_contents("composer.json"), true);
+            file_put_contents("release.json", json_encode([
+              "version" => getenv("VERSION"),
+              "php" => $composer["require"]["php"],
+              "extensions" => ["pdo_mysql", "mbstring", "openssl", "fileinfo", "zip", "zlib", "dom", "xmlreader"],
+              "replace" => ["app", "bootstrap", "config", "database", "resources", "routes", "vendor"],
+              "files" => ["artisan", "composer.json", "composer.lock", "VERSION", "release.json"],
+              "commit" => getenv("GITHUB_SHA"),
+              "built_at" => gmdate("c"),
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+          '
+          mkdir -p dist/package
+          rsync -a --exclude-from=.github/release-exclude.txt ./ dist/package/
+          test -f dist/package/vendor/autoload.php
+          test -f dist/package/public/build/manifest.json
+          test -f dist/package/public/vendor/livewire/livewire.min.js
+          (cd dist/package && zip -qr -X "../../tukahr-$VERSION.zip" .)
+          sha256sum "tukahr-$VERSION.zip" > "tukahr-$VERSION.zip.sha256"
+          cat "tukahr-$VERSION.zip.sha256"
+          ls -lh "tukahr-$VERSION.zip"
+          echo "::notice title=Package::tukahr-$VERSION.zip $(du -h tukahr-$VERSION.zip | cut -f1), $(unzip -l tukahr-$VERSION.zip | tail -1 | awk '{print $2}') files"
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "tukahr-$VERSION.zip" "tukahr-$VERSION.zip.sha256" --clobber

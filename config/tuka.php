@@ -33,4 +33,19 @@ return [
         'mobile' => env('TUKA_ADMIN_MOBILE'),
     ],
 
+    /*
+    | Installed version (written into VERSION by the release build; "dev" in a source checkout).
+    */
+    'version' => trim((string) @file_get_contents(base_path('VERSION'))) ?: 'dev',
+
+    /*
+    | In-app updates from GitHub Releases. A token is only needed for a private repository
+    | or to avoid GitHub's shared rate limit (60 requests/hour per server IP).
+    */
+    'update' => [
+        'repository' => env('TUKA_UPDATE_REPO', 'masoodvahid/tukahr'),
+        'token' => env('TUKA_UPDATE_TOKEN'),
+        'timeout' => (int) env('TUKA_UPDATE_TIMEOUT', 180),
+    ],
+
 ];

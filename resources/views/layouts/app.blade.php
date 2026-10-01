@@ -7,6 +7,7 @@
     <meta name="theme-color" content="#ffffff">
     <title>{{ isset($title) ? $title.' · توکا' : 'لیست حقوق توکا' }}</title>
     <script src="{{ asset('js/sheet-grid.js') }}?v={{ @filemtime(public_path('js/sheet-grid.js')) }}"></script>
+    <script src="{{ asset('js/updater.js') }}?v={{ @filemtime(public_path('js/updater.js')) }}"></script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
@@ -17,6 +18,7 @@
             ['route' => 'dashboard', 'active' => ['dashboard', 'sheets.*'], 'label' => 'لیست‌های حقوق', 'show' => true],
             ['route' => 'members', 'active' => ['members'], 'label' => 'اعضا و دسترسی', 'show' => $me?->isManager()],
             ['route' => 'projects', 'active' => ['projects'], 'label' => 'پروژه‌ها', 'show' => $me?->isManager()],
+            ['route' => 'system.update', 'active' => ['system.update'], 'label' => 'به‌روزرسانی', 'show' => $me?->isManager()],
         ];
     @endphp
     <header class="no-print sticky top-0 z-30 border-b border-line bg-white/95 backdrop-blur">
