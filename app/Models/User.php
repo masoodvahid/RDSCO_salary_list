@@ -3,19 +3,22 @@
 namespace App\Models;
 
 use App\Enums\Role;
+use App\Support\Digits;
 use App\Support\Mobile;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    protected $fillable = ['name', 'job_title', 'mobile', 'role', 'project_id', 'is_active', 'last_login_at'];
+    /** users.project_id is legacy (see the project_user migration); projects live in the pivot. */
+    protected $fillable = ['name', 'job_title', 'mobile', 'role', 'is_active', 'last_login_at'];
 
     protected $hidden = ['remember_token'];
 
@@ -31,9 +34,51 @@ class User extends Authenticatable
         ];
     }
 
-    public function project(): BelongsTo
+    protected static function booted(): void
     {
-        return $this->belongsTo(Project::class);
+        // Becoming (or ceasing to be) an active approver claims (or frees) the approver slot of each project.
+        static::saved(function (User $user) {
+            if ($user->wasChanged(['role', 'is_active'])) {
+                $user->refreshApproverKeys();
+            }
+        });
+    }
+
+    public function projects(): BelongsToMany
+    {
+        return $this->belongsToMany(Project::class)->withPivot('approver_key')->withTimestamps();
+    }
+
+    /** @return list<int> */
+    public function projectIds(): array
+    {
+        return $this->projects->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+    }
+
+    /**
+     * Replace the member's projects. Pass the role / active state the user is about to have when
+     * they change in the same save, so the approver slots are claimed for the right projects.
+     * Throws UniqueConstraintViolationException when another active approver holds one of them.
+     *
+     * @param  array<int|string>  $projectIds
+     */
+    public function syncProjects(array $projectIds, ?Role $role = null, ?bool $active = null): void
+    {
+        $approver = ($role ?? $this->role) === Role::Approver && ($active ?? $this->is_active);
+        $ids = array_values(array_unique(array_map('intval', $projectIds)));
+
+        // sync() detaches first, so slots this user gives up are free before new ones are claimed.
+        $this->projects()->sync(collect($ids)->mapWithKeys(fn (int $id) => [$id => ['approver_key' => $approver ? $id : null]])->all());
+        $this->unsetRelation('projects');
+    }
+
+    public function refreshApproverKeys(): void
+    {
+        $approver = $this->role === Role::Approver && $this->is_active;
+        DB::table('project_user')->where('user_id', $this->id)->update([
+            'approver_key' => $approver ? DB::raw('project_id') : null,
+            'updated_at' => now(),
+        ]);
     }
 
     public function isManager(): bool
@@ -44,17 +89,29 @@ class User extends Authenticatable
     /** Approver without a project scope acts at the finance stage. */
     public function isGlobalApprover(): bool
     {
-        return $this->role === Role::Approver && $this->project_id === null;
+        return $this->role === Role::Approver && $this->projectIds() === [];
     }
 
+    /** Managers, and approvers / viewers with no project, see every project. An editor always works within projects. */
     public function hasAllProjects(): bool
     {
-        return $this->isManager() || $this->project_id === null;
+        return $this->isManager() || ($this->role !== Role::Editor && $this->projectIds() === []);
     }
 
     public function scopeLabel(): string
     {
-        return $this->hasAllProjects() ? 'همه پروژه‌ها' : ($this->project?->name ?? '—');
+        if ($this->hasAllProjects()) {
+            return 'همه پروژه‌ها';
+        }
+        $names = $this->projects->sortBy('name')->pluck('name');
+        if ($names->isEmpty()) {
+            return 'بدون پروژه';
+        }
+        if ($names->count() <= 3) {
+            return $names->join('، ');
+        }
+
+        return $names->take(2)->join('، ').' و '.Digits::toPersian($names->count() - 2).' پروژه‌ی دیگر';
     }
 
     /** "Name (job title)" for signatures and notes; just the name when no title is set. */

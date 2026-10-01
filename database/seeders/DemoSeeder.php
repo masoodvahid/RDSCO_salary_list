@@ -25,11 +25,15 @@ class DemoSeeder extends Seeder
         $projects = collect(['دماوند', 'سپهر', 'آتیه', 'البرز'])
             ->mapWithKeys(fn ($name) => [$name => Project::firstOrCreate(['name' => $name], ['is_active' => true])]);
 
-        $manager = User::updateOrCreate(['mobile' => '09120000000'], ['name' => 'مدیر منابع انسانی (نمونه)', 'job_title' => 'مدیر منابع انسانی', 'role' => Role::Manager, 'project_id' => null, 'is_active' => true]);
-        User::updateOrCreate(['mobile' => '09120000001'], ['name' => 'ویرایشگر دماوند (نمونه)', 'job_title' => 'مسئول اداری پروژه', 'role' => Role::Editor, 'project_id' => $projects['دماوند']->id, 'is_active' => true]);
-        User::updateOrCreate(['mobile' => '09120000002'], ['name' => 'مدیر پروژه دماوند (نمونه)', 'job_title' => 'مدیر داخلی پروژه', 'role' => Role::Approver, 'project_id' => $projects['دماوند']->id, 'is_active' => true]);
-        User::updateOrCreate(['mobile' => '09120000003'], ['name' => 'مالی (نمونه)', 'job_title' => 'مسئول حسابداری', 'role' => Role::Approver, 'project_id' => null, 'is_active' => true]);
-        User::updateOrCreate(['mobile' => '09120000004'], ['name' => 'مدیرعامل (نمونه)', 'job_title' => 'مدیرعامل', 'role' => Role::Viewer, 'project_id' => null, 'is_active' => true]);
+        $manager = User::updateOrCreate(['mobile' => '09120000000'], ['name' => 'مدیر منابع انسانی (نمونه)', 'job_title' => 'مدیر منابع انسانی', 'role' => Role::Manager, 'is_active' => true]);
+        User::updateOrCreate(['mobile' => '09120000001'], ['name' => 'ویرایشگر دماوند و سپهر (نمونه)', 'job_title' => 'مسئول اداری پروژه', 'role' => Role::Editor, 'is_active' => true])
+            ->syncProjects([$projects['دماوند']->id, $projects['سپهر']->id]);
+        User::updateOrCreate(['mobile' => '09120000002'], ['name' => 'مدیر پروژه دماوند (نمونه)', 'job_title' => 'مدیر داخلی پروژه', 'role' => Role::Approver, 'is_active' => true])
+            ->syncProjects([$projects['دماوند']->id]);
+        User::updateOrCreate(['mobile' => '09120000003'], ['name' => 'مالی (نمونه)', 'job_title' => 'مسئول حسابداری', 'role' => Role::Approver, 'is_active' => true])
+            ->syncProjects([]);
+        User::updateOrCreate(['mobile' => '09120000004'], ['name' => 'مدیرعامل (نمونه)', 'job_title' => 'مدیرعامل', 'role' => Role::Viewer, 'is_active' => true])
+            ->syncProjects([]);
 
         [$jy, $jm] = Jalali::previousMonth(...array_slice(Jalali::fromCarbon(now()), 0, 2));
         if (Sheet::where('jalali_year', $jy)->where('jalali_month', $jm)->exists()) {

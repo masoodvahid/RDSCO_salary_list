@@ -19,8 +19,8 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * Roles (each includes the one before it):
  *  - viewer:   see rows in scope, add notes
- *  - editor:   + edit unlocked cells of own project while the project is in Draft and before the deadline
- *  - approver: + approve. Scoped to a project → project approval. All projects → finance (final) approval + record review
+ *  - editor:   + edit unlocked cells of own projects while the project is in Draft and before the deadline
+ *  - approver: + approve. Scoped to projects → project approval of each. All projects → finance (final) approval + record review
  *  - manager:  everything (structure, locked cells, rows, members, HR approval, record review, reopen)
  */
 final class SheetAccess
@@ -33,7 +33,13 @@ final class SheetAccess
     /** @return list<int>|null null means every project */
     public function projectScope(User $user): ?array
     {
-        return $user->hasAllProjects() ? null : [(int) $user->project_id];
+        return $user->hasAllProjects() ? null : $user->projectIds();
+    }
+
+    /** The user is assigned to this project (managers and all-project users are not "members" of one). */
+    public function isMemberOf(User $user, ?int $projectId): bool
+    {
+        return $projectId !== null && in_array($projectId, $user->projectIds(), true);
     }
 
     public function canViewRow(User $user, SheetRow $row): bool
@@ -83,11 +89,11 @@ final class SheetAccess
             return $stage !== Stage::Final;
         }
 
-        if (! in_array($user->role, [Role::Editor, Role::Approver], true) || $user->project_id === null) {
+        if (! in_array($user->role, [Role::Editor, Role::Approver], true)) {
             return false;
         }
 
-        return (int) $row->project_id === (int) $user->project_id
+        return $this->isMemberOf($user, $row->project_id === null ? null : (int) $row->project_id)
             && ! $column->is_locked
             && $stage === Stage::Draft
             && ! $sheet->isPastDeadline($now);
@@ -121,8 +127,8 @@ final class SheetAccess
         $stage = $sheetProject->stage;
 
         return match (true) {
-            $user->role === Role::Approver && $user->project_id !== null
-                && (int) $user->project_id === (int) $sheetProject->project_id
+            $user->role === Role::Approver
+                && $this->isMemberOf($user, (int) $sheetProject->project_id)
                 && $stage === Stage::Draft => Stage::ProjectApproved,
             $user->role === Role::Manager
                 && in_array($stage, [Stage::Draft, Stage::ProjectApproved], true) => Stage::HrApproved,
@@ -142,8 +148,7 @@ final class SheetAccess
     {
         return $user->is_active
             && in_array($user->role, [Role::Editor, Role::Approver], true)
-            && $user->project_id !== null
-            && (int) $user->project_id === (int) $sheetProject->project_id
+            && $this->isMemberOf($user, (int) $sheetProject->project_id)
             && $sheetProject->stage === Stage::Draft
             && ! $sheet->isPastDeadline();
     }

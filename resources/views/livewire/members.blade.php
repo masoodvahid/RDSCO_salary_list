@@ -42,20 +42,13 @@
                     @error('role') <p class="error">{{ $message }}</p> @enderror
                 </div>
                 <div class="sm:col-span-2">
-                    <label for="inv-project" class="label">محدوده دسترسی</label>
-                    <select id="inv-project" wire:model="projectId" class="input" @disabled($role === 'manager')>
-                        <option value="">همه پروژه‌ها</option>
-                        @foreach ($this->projects as $project)
-                            <option value="{{ $project->id }}">پروژه {{ $project->name }}</option>
-                        @endforeach
-                    </select>
-                    @error('projectId') <p class="error">{{ $message }}</p> @enderror
+                    @include('livewire.partials.project-scope', ['prefix' => 'inv', 'scopeModel' => 'scope', 'idsModel' => 'projectIds', 'role' => $role, 'scope' => $scope, 'projects' => $this->projects])
                 </div>
             </div>
             <div class="flex items-center justify-between gap-4 border-t border-line pt-4">
                 <p class="text-xs leading-5 text-ink-soft">
                     @if ($role === 'approver')
-                        تاییدکننده روی یک پروژه = مدیر پروژه. روی همه پروژه‌ها = تایید مالی.
+                        تاییدکننده با پروژه‌های مشخص = مدیر پروژه‌ی همان پروژه‌ها. روی همه پروژه‌ها = تایید مالی.
                     @elseif ($role === 'viewer')
                         مشاهده روی همه پروژه‌ها برای مدیرعامل مناسب است.
                     @else
@@ -114,7 +107,7 @@
                         <div class="flex flex-wrap items-center gap-x-2 text-sm font-semibold">
                             {{ $member->name }}
                             @if ($member->id === auth()->id()) <span class="text-xs font-normal text-ink-soft">(شما)</span> @endif
-                            @if ($member->job_title && $editingId !== $member->id)
+                            @if ($member->job_title)
                                 <span class="text-[13px] font-medium text-accent">{{ $member->job_title }}</span>
                             @endif
                         </div>
@@ -125,59 +118,57 @@
                         </div>
                     </div>
 
-                    @if ($editingId === $member->id)
-                        <div class="flex w-full flex-wrap items-start gap-2 sm:w-auto">
-                            <div>
-                                <label for="edit-name-{{ $member->id }}" class="sr-only">نام</label>
-                                <input id="edit-name-{{ $member->id }}" wire:model="editName" maxlength="120" class="input h-8 w-40 text-[13px]" placeholder="نام و نام خانوادگی" autofocus>
-                                @error('editName') <p class="error max-w-48">{{ $message }}</p> @enderror
-                            </div>
-                            <div>
-                                <label for="edit-job-{{ $member->id }}" class="sr-only">موقعیت شغلی</label>
-                                <input id="edit-job-{{ $member->id }}" wire:model="editJobTitle" list="job-titles" maxlength="120" class="input h-8 w-44 text-[13px]" placeholder="موقعیت شغلی">
-                                @error('editJobTitle') <p class="error max-w-48">{{ $message }}</p> @enderror
-                            </div>
-                            <div>
-                                <label for="edit-role-{{ $member->id }}" class="sr-only">نقش</label>
-                                <select id="edit-role-{{ $member->id }}" wire:model.live="editRole" class="input h-8 w-32 py-0 text-[13px]">
-                                    @foreach ($roles as $r)
-                                        <option value="{{ $r->value }}">{{ $r->label() }}</option>
-                                    @endforeach
-                                </select>
-                                @error('editRole') <p class="error max-w-48">{{ $message }}</p> @enderror
-                            </div>
-                            <div>
-                                <label for="edit-project-{{ $member->id }}" class="sr-only">محدوده</label>
-                                <select id="edit-project-{{ $member->id }}" wire:model="editProjectId" class="input h-8 w-40 py-0 text-[13px]" @disabled($editRole === 'manager')>
-                                    <option value="">همه پروژه‌ها</option>
-                                    @foreach ($this->projects as $project)
-                                        <option value="{{ $project->id }}">{{ $project->name }}</option>
-                                    @endforeach
-                                </select>
-                                @error('editProjectId') <p class="error max-w-56">{{ $message }}</p> @enderror
-                            </div>
-                            <button type="button" wire:click="saveEdit" class="btn btn-primary btn-sm">ذخیره</button>
-                            <button type="button" wire:click="cancelEdit" class="btn btn-ghost btn-sm">انصراف</button>
-                        </div>
-                    @else
-                        <span class="chip bg-white text-ink-soft ring-line-strong">{{ $member->scopeLabel() }}</span>
-                        <span class="chip {{ $member->role->chipClass() }}">{{ $member->role->label() }}</span>
-                        <div class="flex items-center gap-1">
-                            <button type="button" wire:click="startEdit({{ $member->id }})" class="btn btn-ghost btn-sm">تغییر</button>
-                            @if ($member->is_active)
-                                <button type="button" wire:click="newLink({{ $member->id }})" class="btn btn-ghost btn-sm text-accent">لینک دعوت</button>
-                            @endif
-                            @if ($member->id !== auth()->id())
-                                <button type="button" wire:click="toggleActive({{ $member->id }})"
-                                    @if ($member->is_active) wire:confirm="دسترسی {{ $member->name }} قطع شود؟" @endif
-                                    @class(['btn btn-ghost btn-sm', 'text-red-700 hover:bg-red-50' => $member->is_active, 'text-emerald-700 hover:bg-emerald-50' => ! $member->is_active])>{{ $member->is_active ? 'قطع دسترسی' : 'فعال‌سازی' }}</button>
-                            @endif
-                        </div>
-                    @endif
+                    <span class="chip max-w-64 truncate bg-white text-ink-soft ring-line-strong" title="{{ $member->projects->sortBy('name')->pluck('name')->join('، ') }}">{{ $member->scopeLabel() }}</span>
+                    <span class="chip {{ $member->role->chipClass() }}">{{ $member->role->label() }}</span>
+                    <div class="flex items-center gap-1">
+                        <button type="button" wire:click="startEdit({{ $member->id }})" class="btn btn-ghost btn-sm">تغییر</button>
+                        @if ($member->is_active)
+                            <button type="button" wire:click="newLink({{ $member->id }})" class="btn btn-ghost btn-sm text-accent">لینک دعوت</button>
+                        @endif
+                        @if ($member->id !== auth()->id())
+                            <button type="button" wire:click="toggleActive({{ $member->id }})"
+                                @if ($member->is_active) wire:confirm="دسترسی {{ $member->name }} قطع شود؟" @endif
+                                @class(['btn btn-ghost btn-sm', 'text-red-700 hover:bg-red-50' => $member->is_active, 'text-emerald-700 hover:bg-emerald-50' => ! $member->is_active])>{{ $member->is_active ? 'قطع دسترسی' : 'فعال‌سازی' }}</button>
+                        @endif
+                    </div>
                 </li>
             @empty
                 <li class="px-5 py-10 text-center text-sm text-ink-soft">کسی پیدا نشد.</li>
             @endforelse
         </ul>
     </section>
+
+    @if ($editingId)
+        @php $editing = $this->members->firstWhere('id', $editingId); @endphp
+        <x-modal title="ویرایش دسترسی {{ $editing?->name ?? $editName }}" close="cancelEdit" width="max-w-xl">
+            <form wire:submit="saveEdit" id="member-edit-form" class="space-y-4">
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <label for="edit-name" class="label">نام</label>
+                        <input id="edit-name" wire:model="editName" maxlength="120" class="input" placeholder="نام و نام خانوادگی" autofocus>
+                        @error('editName') <p class="error">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
+                        <label for="edit-job" class="label">موقعیت شغلی <span class="font-normal text-ink-soft">(اختیاری)</span></label>
+                        <input id="edit-job" wire:model="editJobTitle" list="job-titles" maxlength="120" class="input" placeholder="مثلاً: مدیر داخلی پروژه">
+                        @error('editJobTitle') <p class="error">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
+                        <label for="edit-role" class="label">نقش</label>
+                        <select id="edit-role" wire:model.live="editRole" class="input" @disabled($editingId === auth()->id())>
+                            @foreach ($roles as $r)
+                                <option value="{{ $r->value }}">{{ $r->label() }}</option>
+                            @endforeach
+                        </select>
+                        @error('editRole') <p class="error">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+                @include('livewire.partials.project-scope', ['prefix' => 'edit', 'scopeModel' => 'editScope', 'idsModel' => 'editProjectIds', 'role' => $editRole, 'scope' => $editScope, 'projects' => $this->editProjects])
+            </form>
+            <x-slot:footer>
+                <button type="button" wire:click="cancelEdit" class="btn btn-ghost">انصراف</button>
+                <button type="submit" form="member-edit-form" class="btn btn-primary">ذخیره</button>
+            </x-slot:footer>
+        </x-modal>
+    @endif
 </div>

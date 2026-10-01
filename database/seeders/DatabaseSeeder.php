@@ -15,7 +15,7 @@ class DatabaseSeeder extends Seeder
         if (Mobile::isValid($mobile)) {
             User::updateOrCreate(
                 ['mobile' => $mobile],
-                ['name' => config('tuka.admin.name') ?: 'مدیر سامانه', 'role' => Role::Manager, 'project_id' => null, 'is_active' => true],
+                ['name' => config('tuka.admin.name') ?: 'مدیر سامانه', 'role' => Role::Manager, 'is_active' => true],
             );
         }
 

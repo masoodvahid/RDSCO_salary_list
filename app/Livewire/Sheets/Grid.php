@@ -36,7 +36,7 @@ class Grid extends Component
     #[Locked]
     public int $sheetId;
 
-    /** Project id, 'none' for rows without a project, or null for all (managers/all-project users). */
+    /** Project id, 'none' for rows without a project (all-project users), or null for every project the user sees. */
     #[Url(as: 'project')]
     public $projectFilter = null;
 
@@ -96,9 +96,8 @@ class Grid extends Component
         $user = $this->user();
         abort_unless($this->access()->canView($user), 403);
 
-        if (! $user->hasAllProjects()) {
-            $this->projectFilter = $user->project_id;
-        }
+        // A member of a single project always works in it; members of several start on "all my projects".
+        $this->projectFilter = $this->currentProjectId() ?? ($this->projectFilter === 'none' && $user->hasAllProjects() ? 'none' : null);
     }
 
     // ---------------------------------------------------------------- data
@@ -139,14 +138,15 @@ class Grid extends Component
 
     public function currentProjectId(): ?int
     {
-        $user = $this->user();
-        if (! $user->hasAllProjects()) {
-            return (int) $user->project_id;
+        $id = is_numeric($this->projectFilter) ? (int) $this->projectFilter : null;
+        if ($id && $this->visibleProjects->has($id)) {
+            return $id;
+        }
+        if (! $this->user()->hasAllProjects() && $this->visibleProjects->count() === 1) {
+            return (int) $this->visibleProjects->keys()->first();
         }
 
-        $id = is_numeric($this->projectFilter) ? (int) $this->projectFilter : null;
-
-        return $id && $this->sheetProjects->has($id) ? $id : null;
+        return null;
     }
 
     #[Computed]
@@ -244,10 +244,20 @@ class Grid extends Component
 
     public function filterProject($projectId): void
     {
-        if (! $this->user()->hasAllProjects()) {
-            return;
+        $user = $this->user();
+        if ($projectId === 'none') {
+            if (! $user->hasAllProjects()) {
+                return;
+            }
+            $this->projectFilter = 'none';
+        } elseif (is_numeric($projectId)) {
+            if (! $this->access()->canViewProject($user, (int) $projectId)) {
+                return;
+            }
+            $this->projectFilter = (int) $projectId;
+        } else {
+            $this->projectFilter = null;
         }
-        $this->projectFilter = $projectId === 'none' ? 'none' : (is_numeric($projectId) ? (int) $projectId : null);
         $this->refreshData();
     }
 

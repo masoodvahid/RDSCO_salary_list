@@ -1,6 +1,7 @@
 @php
     use App\Enums\ColumnType;
     use App\Enums\ReviewStatus;
+    use App\Enums\Role;
     use App\Enums\Stage;
     use App\Support\Digits;
     use App\Support\Jalali;
@@ -73,9 +74,9 @@
 
         <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
             <div role="group" aria-label="فیلتر پروژه" class="flex flex-wrap items-center gap-1.5">
-                @if ($user->hasAllProjects())
+                @if ($user->hasAllProjects() || $this->visibleProjects->count() > 1)
                     <button type="button" wire:click="filterProject(null)" aria-pressed="{{ $projectFilter === null ? 'true' : 'false' }}"
-                        @class(['h-8 rounded-full border px-3 text-[13px]', 'border-accent bg-accent font-semibold text-white' => $projectFilter === null, 'border-line-strong bg-white text-ink hover:border-accent/40 hover:bg-accent-soft' => $projectFilter !== null])>همه پروژه‌ها</button>
+                        @class(['h-8 rounded-full border px-3 text-[13px]', 'border-accent bg-accent font-semibold text-white' => $projectFilter === null, 'border-line-strong bg-white text-ink hover:border-accent/40 hover:bg-accent-soft' => $projectFilter !== null])>{{ $user->hasAllProjects() ? 'همه پروژه‌ها' : 'همه‌ی پروژه‌های من' }}</button>
                     @foreach ($this->visibleProjects as $sp)
                         @php $active = (string) $projectFilter === (string) $sp->project_id; @endphp
                         <button type="button" wire:key="filter-{{ $sp->id }}" wire:click="filterProject({{ $sp->project_id }})" aria-pressed="{{ $active ? 'true' : 'false' }}"
@@ -89,8 +90,13 @@
                         <button type="button" wire:click="filterProject('none')"
                             @class(['h-8 rounded-full border px-3 text-[13px]', 'border-amber-600 bg-amber-600 font-semibold text-white' => $projectFilter === 'none', 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100' => $projectFilter !== 'none'])>بدون پروژه <b class="font-bold">{{ Digits::toPersian($unassignedCount) }}</b></button>
                     @endif
+                    @if (! $user->hasAllProjects() && ! $currentSp && $user->role !== Role::Viewer)
+                        <span class="ms-1 text-xs text-ink-soft">برای ارسال یا تایید، پروژه را انتخاب کنید.</span>
+                    @endif
+                @elseif ($this->visibleProjects->isNotEmpty())
+                    <span class="text-sm text-ink-soft">شما فقط پرسنل پروژه <b class="text-ink">{{ $this->visibleProjects->first()->project->name }}</b> را می‌بینید.</span>
                 @else
-                    <span class="text-sm text-ink-soft">شما فقط پرسنل پروژه <b class="text-ink">{{ $user->project?->name }}</b> را می‌بینید.</span>
+                    <span class="text-sm text-ink-soft">پروژه‌ی شما ({{ $user->scopeLabel() }}) در لیست این ماه نیست.</span>
                 @endif
             </div>
             <div class="flex items-center gap-2">
