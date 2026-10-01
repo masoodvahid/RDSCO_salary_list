@@ -71,6 +71,31 @@ class MembersTest extends TestCase
         $this->assertSame('کاوه مرادی', $user->fresh()->nameWithTitle());
     }
 
+    public function test_manager_edits_a_member_name(): void
+    {
+        $manager = User::factory()->manager()->create();
+        $member = User::factory()->viewer()->create(['name' => 'نام قدیمی']);
+
+        Livewire::actingAs($manager)
+            ->test(Members::class)
+            ->call('startEdit', $member->id)
+            ->assertSet('editName', 'نام قدیمی')
+            ->set('editName', '  نام   جدید ')
+            ->call('saveEdit')
+            ->assertHasNoErrors();
+
+        $this->assertSame('نام جدید', $member->fresh()->name);
+
+        Livewire::actingAs($manager)
+            ->test(Members::class)
+            ->call('startEdit', $member->id)
+            ->set('editName', '  ')
+            ->call('saveEdit')
+            ->assertHasErrors('editName');
+
+        $this->assertSame('نام جدید', $member->fresh()->name);
+    }
+
     public function test_a_project_has_at_most_one_active_approver(): void
     {
         $manager = User::factory()->manager()->create();

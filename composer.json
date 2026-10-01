@@ -2,7 +2,7 @@
     "$schema": "https://getcomposer.org/schema.json",
     "name": "tuka/tukahr",
     "type": "project",
-    "description": "TukaHR — monthly payroll sheets with project-scoped editing, approvals and Kavenegar OTP.",
+    "description": "Salary list management system — monthly payroll sheets with project-scoped editing, approvals and Kavenegar OTP.",
     "keywords": [
         "laravel",
         "livewire",

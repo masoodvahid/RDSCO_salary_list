@@ -28,3 +28,4 @@ _ide_helper.php
 Thumbs.db
 /junit.xml
 /test-output.log
+.DS_Store

@@ -288,6 +288,101 @@ final class SheetEditor
         });
     }
 
+    /**
+     * Deletes several rows at once (manager's multi-select). All or nothing: if any selected
+     * row belongs to a finalized project, nothing is deleted.
+     *
+     * @param  list<int|string>  $rowIds
+     * @return int number of deleted rows
+     */
+    public function deleteRows(User $user, Sheet $sheet, array $rowIds): int
+    {
+        $this->authorizeManage($user);
+        $rows = $this->selectedRows($sheet, $rowIds);
+        $final = $this->finalProjectIds($sheet->id);
+
+        $locked = $rows->filter(fn (SheetRow $row) => in_array((int) $row->project_id, $final, true));
+        if ($locked->isNotEmpty()) {
+            throw ValidationException::withMessages(['rows' => Digits::toPersian($locked->count()).' ردیف انتخاب‌شده متعلق به لیست نهایی‌شده است و حذف نمی‌شود؛ آن‌ها را از انتخاب خارج کنید.']);
+        }
+
+        DB::transaction(function () use ($user, $sheet, $rows) {
+            foreach ($rows as $row) {
+                $this->log->record($sheet->id, $user, 'row.delete', $row->id, null, $row->fullName().' · '.$row->national_code);
+            }
+            SheetRow::whereIn('id', $rows->pluck('id'))->delete(); // cells and notes cascade
+        });
+
+        return $rows->count();
+    }
+
+    /**
+     * Assigns one project (or none) to several rows.
+     *
+     * @param  list<int|string>  $rowIds
+     * @return int number of rows whose project changed
+     */
+    public function setRowsProject(User $user, Sheet $sheet, array $rowIds, ?int $projectId): int
+    {
+        $this->authorizeManage($user);
+
+        if ($projectId !== null && ! SheetProject::where('sheet_id', $sheet->id)->where('project_id', $projectId)->exists()) {
+            throw ValidationException::withMessages(['rows' => 'این پروژه در پروژه‌های این ماه نیست.']);
+        }
+        if ($this->isFinal($sheet->id, $projectId)) {
+            throw ValidationException::withMessages(['rows' => 'لیست این پروژه نهایی شده است.']);
+        }
+
+        $rows = $this->selectedRows($sheet, $rowIds);
+        $final = $this->finalProjectIds($sheet->id);
+        $locked = $rows->filter(fn (SheetRow $row) => in_array((int) $row->project_id, $final, true));
+        if ($locked->isNotEmpty()) {
+            throw ValidationException::withMessages(['rows' => Digits::toPersian($locked->count()).' ردیف انتخاب‌شده متعلق به لیست نهایی‌شده است و پروژه‌اش تغییر نمی‌کند.']);
+        }
+
+        $names = Project::pluck('name', 'id');
+        $changed = 0;
+        DB::transaction(function () use ($user, $sheet, $rows, $projectId, $names, &$changed) {
+            foreach ($rows as $row) {
+                if ((int) $row->project_id === (int) $projectId) {
+                    continue;
+                }
+                $old = $row->project_id ? $names->get($row->project_id) : null;
+                $row->update(['project_id' => $projectId]);
+                $this->log->record($sheet->id, $user, 'row.project', $row->id, null, $old, $projectId ? $names->get($projectId) : null);
+                $changed++;
+            }
+        });
+
+        return $changed;
+    }
+
+    /** @param list<int|string> $rowIds */
+    private function selectedRows(Sheet $sheet, array $rowIds): \Illuminate\Support\Collection
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $rowIds))));
+        if ($ids === []) {
+            throw ValidationException::withMessages(['rows' => 'ردیفی انتخاب نشده است.']);
+        }
+        if (count($ids) > 5000) {
+            throw ValidationException::withMessages(['rows' => 'حداکثر ۵۰۰۰ ردیف را می‌توان یک‌جا تغییر داد.']);
+        }
+
+        return SheetRow::where('sheet_id', $sheet->id)->whereIn('id', $ids)->get();
+    }
+
+    private function isFinal(int $sheetId, ?int $projectId): bool
+    {
+        return $projectId !== null && in_array($projectId, $this->finalProjectIds($sheetId), true);
+    }
+
+    /** @return list<int> */
+    private function finalProjectIds(int $sheetId): array
+    {
+        return SheetProject::where('sheet_id', $sheetId)->where('stage', Stage::Final->value)
+            ->pluck('project_id')->map(fn ($id) => (int) $id)->all();
+    }
+
     public function setRowProject(User $user, SheetRow $row, ?int $projectId): void
     {
         $this->authorizeManage($user);

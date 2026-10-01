@@ -128,6 +128,11 @@
                     @if ($editingId === $member->id)
                         <div class="flex w-full flex-wrap items-start gap-2 sm:w-auto">
                             <div>
+                                <label for="edit-name-{{ $member->id }}" class="sr-only">نام</label>
+                                <input id="edit-name-{{ $member->id }}" wire:model="editName" maxlength="120" class="input h-8 w-40 text-[13px]" placeholder="نام و نام خانوادگی" autofocus>
+                                @error('editName') <p class="error max-w-48">{{ $message }}</p> @enderror
+                            </div>
+                            <div>
                                 <label for="edit-job-{{ $member->id }}" class="sr-only">موقعیت شغلی</label>
                                 <input id="edit-job-{{ $member->id }}" wire:model="editJobTitle" list="job-titles" maxlength="120" class="input h-8 w-44 text-[13px]" placeholder="موقعیت شغلی">
                                 @error('editJobTitle') <p class="error max-w-48">{{ $message }}</p> @enderror

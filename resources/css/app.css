@@ -123,6 +123,7 @@
 
 /* ---------- Excel-like sheet ---------- */
 .sheet {
+    --index-col: 48px;
     border-collapse: separate;
     border-spacing: 0;
     font-size: 13px;
@@ -167,14 +168,17 @@
     right: 0;
     z-index: 2;
 }
+.sheet.has-select {
+    --index-col: 72px;
+}
 .sheet .sticky-2 {
     position: sticky;
-    right: 48px;
+    right: var(--index-col);
     z-index: 2;
 }
 .sheet .sticky-3 {
     position: sticky;
-    right: 168px;
+    right: calc(var(--index-col) + 120px);
     z-index: 2;
     box-shadow: -1px 0 0 var(--color-line-strong);
 }
@@ -276,6 +280,34 @@
 .is-filling * {
     cursor: crosshair !important;
     user-select: none;
+}
+
+/* Row selection (managers). */
+.row-select {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 34px;
+    padding: 0 6px;
+    cursor: pointer;
+    user-select: none;
+}
+.row-select input {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--color-accent);
+    cursor: pointer;
+}
+.row-select input:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
+}
+.sheet tbody tr:has(input[data-select-row]:checked) td {
+    background: #e8edff;
+}
+.sheet tbody tr:has(input[data-select-row]:checked) td.sticky-1 {
+    box-shadow: inset 3px 0 0 var(--color-accent);
 }
 
 /* Validation error under a cell. */

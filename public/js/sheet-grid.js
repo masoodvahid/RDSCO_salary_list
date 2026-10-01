@@ -10,6 +10,7 @@
  *   number format are checked first; invalid input is never queued. The error shows under
  *   the cell; Enter keeps the cell for correction, leaving it restores the saved value.
  * - Managers reorder columns by dragging the grip in the column header.
+ * - Managers select rows (Shift+click for a run of rows) to delete them or set their project.
  * - Number cells show thousands separators; raw value while editing.
  * - Pulls other users' edits every few seconds via $wire.changesSince.
  */
@@ -29,6 +30,8 @@ document.addEventListener('alpine:init', () => {
         fill: null, // active drag: { source, col, r0, r1, value, pointer, targets }
         bubble: null,
         colDrag: null, // active column drag: { grip, th, id, target, before, pointer, moved }
+        selected: {}, // row id → true (manager multi-select)
+        lastSelected: null, // anchor row for Shift+click
 
         init() {
             const root = this.$refs.grid || this.$el;
@@ -42,6 +45,7 @@ document.addEventListener('alpine:init', () => {
             });
             // A Livewire re-render drops the handle (it is not in the server HTML); put it back.
             window.Livewire?.hook?.('commit', ({ succeed }) => succeed(() => requestAnimationFrame(() => {
+                if (this.$el.isConnected) this.pruneSelection();
                 const active = document.activeElement;
                 if (this.$el.isConnected && !this.fill && this.isFillable(active)) this.placeHandle(active);
                 if (this.$el.isConnected && this.isCell(active) && active.classList.contains('is-error')) {
@@ -602,6 +606,72 @@ document.addEventListener('alpine:init', () => {
             if (refused.length > 1) {
                 this.message = `${this.toPersian(refused.length)} مقدار ذخیره نشد؛ ${refused.filter(Boolean)[0] || ''}`;
             }
+        },
+
+        // ------------------------------------------------------------ row selection (managers)
+
+        get selectedIds() {
+            return Object.keys(this.selected).filter((id) => this.selected[id]).map(Number);
+        },
+        get selectedCount() {
+            return this.selectedIds.length;
+        },
+        /** Visible rows that can be selected, in screen order. */
+        selectableRows() {
+            const root = this.$refs.grid || this.$el;
+            return [...root.querySelectorAll('input[data-select-row]:not(:disabled)')].map((el) => Number(el.dataset.selectRow));
+        },
+        toggleRow(e, id) {
+            const on = e.target.checked;
+            const rows = this.selectableRows();
+            const from = rows.indexOf(this.lastSelected);
+            const to = rows.indexOf(id);
+            if (e.shiftKey && from !== -1 && to !== -1) {
+                // Shift+click: the whole run between the previous click and this one.
+                const [lo, hi] = from < to ? [from, to] : [to, from];
+                rows.slice(lo, hi + 1).forEach((rowId) => this.setSelected(rowId, on));
+            } else {
+                this.setSelected(id, on);
+            }
+            this.lastSelected = id;
+        },
+        setSelected(id, on) {
+            if (on) this.selected[id] = true;
+            else delete this.selected[id];
+        },
+        toggleAll(e) {
+            if (e.target.checked) this.selectableRows().forEach((id) => (this.selected[id] = true));
+            else this.clearSelection();
+        },
+        clearSelection() {
+            this.selected = {};
+            this.lastSelected = null;
+        },
+        /** Keeps the header checkbox in step: checked, indeterminate or empty. */
+        syncSelectAll(el) {
+            const count = this.selectedCount;
+            const total = this.selectableRows().length;
+            el.checked = total > 0 && count >= total;
+            el.indeterminate = count > 0 && count < total;
+        },
+        /** After a re-render, forget rows that are no longer on screen (deleted or filtered out). */
+        pruneSelection() {
+            const present = new Set(this.selectableRows());
+            Object.keys(this.selected).forEach((id) => present.has(Number(id)) || delete this.selected[id]);
+        },
+        async deleteSelected() {
+            const ids = this.selectedIds;
+            if (!ids.length) return;
+            const question = `${this.toPersian(ids.length)} ردیف حذف شود؟\n\nمقادیر و یادداشت‌های این افراد هم حذف می‌شود. حذف در لاگ تغییرات ثبت می‌شود.`;
+            if (!window.confirm(question)) return;
+            await this.settle();
+            if (await this.$wire.deleteRows(ids)) this.clearSelection();
+        },
+        async assignProject(projectId) {
+            const ids = this.selectedIds;
+            if (!ids.length || projectId === '__') return;
+            await this.settle();
+            if (await this.$wire.setRowsProject(ids, projectId === '' ? null : Number(projectId))) this.clearSelection();
         },
 
         // ------------------------------------------------------------ column order (managers)

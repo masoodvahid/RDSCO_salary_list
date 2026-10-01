@@ -89,6 +89,6 @@ final class SheetExporter
     {
         $suffix = $projectId ? '-p'.$projectId : '';
 
-        return "tukahr-{$sheet->jalali_year}-".str_pad((string) $sheet->jalali_month, 2, '0', STR_PAD_LEFT).$suffix.'.xlsx';
+        return "salary-list-{$sheet->jalali_year}-".str_pad((string) $sheet->jalali_month, 2, '0', STR_PAD_LEFT).$suffix.'.xlsx';
     }
 }
