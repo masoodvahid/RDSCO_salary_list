@@ -95,4 +95,21 @@ final class ReviewService
 
         return $note;
     }
+
+    public function deleteNote(User $user, Note $note): void
+    {
+        if (! $this->access->canDeleteNote($user, $note)) {
+            throw new AuthorizationException('فقط مدیر می‌تواند یادداشت را حذف کند.');
+        }
+
+        DB::transaction(function () use ($user, $note) {
+            // Keep the text and author in the log so a deleted rejection reason is still traceable.
+            $this->log->record($note->sheet_id, $user, 'note.delete', $note->row_id, null, $note->body, null, [
+                'kind' => $note->kind,
+                'author_id' => $note->user_id,
+                'created_at' => $note->created_at?->toDateTimeString(),
+            ]);
+            $note->delete();
+        });
+    }
 }

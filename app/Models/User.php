@@ -15,7 +15,7 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    protected $fillable = ['name', 'mobile', 'role', 'project_id', 'is_active', 'last_login_at'];
+    protected $fillable = ['name', 'job_title', 'mobile', 'role', 'project_id', 'is_active', 'last_login_at'];
 
     protected $hidden = ['remember_token'];
 
@@ -55,6 +55,12 @@ class User extends Authenticatable
     public function scopeLabel(): string
     {
         return $this->hasAllProjects() ? 'همه پروژه‌ها' : ($this->project?->name ?? '—');
+    }
+
+    /** "Name (job title)" for signatures and notes; just the name when no title is set. */
+    public function nameWithTitle(): string
+    {
+        return filled($this->job_title) ? "{$this->name} ({$this->job_title})" : $this->name;
     }
 
     public function maskedMobile(): string

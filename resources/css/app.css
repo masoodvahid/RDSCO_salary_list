@@ -6,15 +6,39 @@
 @source '../views/**/*.blade.php';
 @source '../../app/**/*.php';
 
+/*
+ * Design tokens.
+ * Color carries meaning here: the four stage colors (draft → project → HR → final) run through
+ * badges, filters, the dashboard and the brand mark. Everything else stays neutral and light.
+ */
 @theme {
     --font-sans: 'Vazirmatn', ui-sans-serif, system-ui, Tahoma, sans-serif;
-    --color-accent: #2446b0;
-    --color-accent-soft: #edf1fc;
+
+    --color-ink: #1e2433;
+    --color-ink-soft: #5b6275;
+    --color-canvas: #f3f5f9;
+    --color-line: #e2e6ee;
+    --color-line-strong: #d3d9e4;
+
+    --color-accent: #2f54eb;
+    --color-accent-hover: #2445d4;
+    --color-accent-soft: #eef2ff;
+
+    --color-stage-draft: #f59e0b;
+    --color-stage-project: #0ea5e9;
+    --color-stage-hr: #7c5cf6;
+    --color-stage-final: #10b981;
+
+    --radius-card: 14px;
 }
 
 @layer base {
     html {
         font-feature-settings: 'ss01';
+    }
+    body {
+        background: var(--color-canvas);
+        color: var(--color-ink);
     }
     button,
     input,
@@ -25,38 +49,53 @@
     [x-cloak] {
         display: none !important;
     }
+    :focus-visible {
+        outline-color: var(--color-accent);
+    }
 }
 
 @layer components {
     .btn {
-        @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-3.5 text-sm font-medium whitespace-nowrap text-zinc-800 transition hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50;
+        @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-line-strong bg-white px-3.5 text-sm font-medium whitespace-nowrap text-ink transition-colors hover:border-zinc-400 hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50;
     }
     .btn-primary {
-        @apply border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800;
+        @apply border-accent bg-accent text-white shadow-sm shadow-accent/20 hover:border-accent-hover hover:bg-accent-hover;
+    }
+    .btn-soft {
+        @apply border-transparent bg-accent-soft text-accent hover:border-transparent hover:bg-indigo-100;
     }
     .btn-danger {
-        @apply border-red-700 bg-red-700 text-white hover:bg-red-800;
+        @apply border-red-600 bg-red-600 text-white hover:border-red-700 hover:bg-red-700;
     }
     .btn-ghost {
-        @apply border-transparent bg-transparent hover:bg-zinc-100;
+        @apply border-transparent bg-transparent hover:border-transparent hover:bg-zinc-100;
     }
     .btn-sm {
         @apply h-8 px-2.5 text-[13px];
     }
     .input {
-        @apply block h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-accent focus:ring-2 focus:ring-accent/20 focus:outline-none;
+        @apply block h-10 w-full rounded-lg border border-line-strong bg-white px-3 text-sm text-ink placeholder:text-zinc-400 focus:border-accent focus:ring-3 focus:ring-accent/15 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-500 read-only:bg-zinc-50;
     }
     .label {
-        @apply mb-1.5 block text-[13px] font-semibold text-zinc-700;
+        @apply mb-1.5 block text-[13px] font-semibold text-ink;
+    }
+    .hint {
+        @apply mt-1.5 text-xs leading-5 text-ink-soft;
     }
     .error {
         @apply mt-1 text-[13px] text-red-700;
     }
     .card {
-        @apply rounded-xl border border-zinc-200 bg-white;
+        @apply rounded-card border border-line bg-white;
     }
     .chip {
-        @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset;
+        @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap ring-1 ring-inset;
+    }
+    .page-title {
+        @apply text-[26px] leading-tight font-extrabold text-ink;
+    }
+    .page-lead {
+        @apply mt-1.5 max-w-2xl text-sm leading-6 text-ink-soft;
     }
     .num {
         direction: ltr;
@@ -64,6 +103,23 @@
         font-variant-numeric: tabular-nums;
     }
 }
+
+/* Brand mark: four bars in the stage colors, the pipeline every list goes through. */
+.brand-mark {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 20px;
+}
+.brand-mark i {
+    display: block;
+    width: 4px;
+    border-radius: 2px;
+}
+.brand-mark i:nth-child(1) { height: 8px; background: var(--color-stage-draft); }
+.brand-mark i:nth-child(2) { height: 12px; background: var(--color-stage-project); }
+.brand-mark i:nth-child(3) { height: 16px; background: var(--color-stage-hr); }
+.brand-mark i:nth-child(4) { height: 20px; background: var(--color-stage-final); }
 
 /* ---------- Excel-like sheet ---------- */
 .sheet {
@@ -76,8 +132,8 @@
 }
 .sheet th,
 .sheet td {
-    border-bottom: 1px solid #e4e4e7;
-    border-left: 1px solid #e4e4e7;
+    border-bottom: 1px solid #e8ebf1;
+    border-left: 1px solid #e8ebf1;
     height: 34px;
     padding: 0;
     white-space: nowrap;
@@ -87,20 +143,24 @@
     position: sticky;
     top: 0;
     z-index: 3;
-    background: #fafafa;
-    color: #3f3f46;
+    background: #f1f4fa;
+    color: #3b4357;
     font-weight: 600;
     text-align: right;
     height: 40px;
-    border-bottom-color: #d4d4d8;
+    border-bottom: 1px solid var(--color-line-strong);
+}
+.sheet thead th.is-locked {
+    background: #fbf5e6;
+    color: #8a5a00;
 }
 .sheet tfoot td {
     position: sticky;
     bottom: 0;
     z-index: 2;
-    background: #f4f4f5;
+    background: #f1f4fa;
     font-weight: 700;
-    border-top: 1px solid #d4d4d8;
+    border-top: 1px solid var(--color-line-strong);
 }
 .sheet .sticky-1 {
     position: sticky;
@@ -116,7 +176,7 @@
     position: sticky;
     right: 168px;
     z-index: 2;
-    box-shadow: -1px 0 0 #d4d4d8;
+    box-shadow: -1px 0 0 var(--color-line-strong);
 }
 .sheet thead .sticky-1,
 .sheet thead .sticky-2,
@@ -126,15 +186,19 @@
 .sheet tfoot .sticky-3 {
     z-index: 4;
 }
-.sheet td.ro {
-    background: #f7f7f8;
-    color: #52525b;
+.sheet tbody tr:hover td {
+    background: #f7f9ff;
+}
+.sheet td.ro,
+.sheet tbody tr:hover td.ro {
+    background: #f7f8fb;
+    color: var(--color-ink-soft);
 }
 .sheet tr.is-rejected td {
-    background: #fef6f5;
+    background: #fff6f5;
 }
 .sheet tr.is-rejected td.ro {
-    background: #f9ecea;
+    background: #fbeceb;
 }
 .sheet .cell-text {
     display: block;
@@ -151,21 +215,26 @@
     border: 0;
     background: transparent;
     padding: 0 8px;
-    color: #18181b;
+    color: var(--color-ink);
     outline: none;
     border-radius: 0;
 }
 .sheet input.cell:focus,
-.sheet select.cell:focus {
+.sheet select.cell:focus,
+.sheet input.cell.is-fill-source {
     background: #fff;
-    box-shadow: inset 0 0 0 2px #2446b0;
+    box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 .sheet input.cell.is-dirty {
     background: #fffbeb;
 }
+.sheet .is-out-of-range {
+    color: #c4302b;
+    background: #fff4f3;
+}
 .sheet input.cell.is-error {
     background: #fef2f2;
-    box-shadow: inset 0 0 0 1px #b42318;
+    box-shadow: inset 0 0 0 1px #c4302b;
 }
 .sheet input.cell.is-conflict {
     background: #fff7ed;
@@ -176,8 +245,49 @@
     transition: background 0.6s;
 }
 
+/* Fill handle (bottom-left corner of the active cell in RTL, as in Excel). */
+.sheet td.fill-host {
+    position: relative;
+}
+.fill-handle {
+    position: absolute;
+    left: -5px;
+    bottom: -5px;
+    z-index: 1;
+    width: 9px;
+    height: 9px;
+    border: 2px solid #fff;
+    border-radius: 2px;
+    background: var(--color-accent);
+    cursor: crosshair;
+    touch-action: none;
+}
+.fill-handle::before {
+    /* larger invisible grab area */
+    content: '';
+    position: absolute;
+    inset: -6px;
+}
+.sheet input.cell.is-fill-target {
+    background: var(--color-accent-soft);
+    box-shadow: inset 0 0 0 1px rgb(47 84 235 / 0.35);
+}
+.is-filling,
+.is-filling * {
+    cursor: crosshair !important;
+    user-select: none;
+}
+
 @media print {
     .no-print {
         display: none !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        transition-duration: 0.01ms !important;
     }
 }

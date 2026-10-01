@@ -4,6 +4,8 @@
  *
  * - Saves on change (blur/Enter) in small batches via $wire.saveCells (optimistic versions).
  * - Arrow/Enter navigation (RTL aware), multi-cell paste from Excel.
+ * - Fill handle: drag the small square at the corner of the active cell up or down to copy
+ *   its value into that column (Ctrl+D copies the value of the cell above), like Excel.
  * - Number cells show thousands separators; raw value while editing.
  * - Pulls other users' edits every few seconds via $wire.changesSince.
  */
@@ -17,11 +19,22 @@ document.addEventListener('alpine:init', () => {
         pollTimer: null,
         lastSync: options.syncedAt || null,
         signature: options.signature || null,
+        info: '',
+        infoTimer: null,
+        handle: null,
+        fill: null, // active drag: { source, col, r0, r1, value, pointer, targets }
 
         init() {
             const root = this.$refs.grid || this.$el;
             root.addEventListener('focusin', (e) => this.isCell(e.target) && this.onFocus(e.target));
             root.addEventListener('focusout', (e) => this.isCell(e.target) && this.onBlur(e.target));
+            this.createHandle();
+            // A Livewire re-render drops the handle (it is not in the server HTML); put it back.
+            window.Livewire?.hook?.('commit', ({ succeed }) => succeed(() => requestAnimationFrame(() => {
+                if (this.$el.isConnected && !this.fill && this.isFillable(document.activeElement)) {
+                    this.placeHandle(document.activeElement);
+                }
+            })));
             root.addEventListener('change', (e) => this.isCell(e.target) && this.queue(e.target));
             root.addEventListener('keydown', (e) => this.onKey(e));
             root.addEventListener('paste', (e) => this.onPaste(e));
@@ -41,6 +54,8 @@ document.addEventListener('alpine:init', () => {
         destroy() {
             clearInterval(this.pollTimer);
             window.removeEventListener('beforeunload', this._beforeUnload);
+            this.cancelFill();
+            this.handle?.remove();
         },
 
         isCell(el) {
@@ -77,9 +92,22 @@ document.addEventListener('alpine:init', () => {
         onFocus(el) {
             if (this.isNumber(el)) el.value = this.raw(el);
             requestAnimationFrame(() => el.select());
+            this.placeHandle(el);
         },
         onBlur(el) {
             if (this.isNumber(el)) el.value = this.group(this.raw(el));
+            // Focus may be moving to another cell; decide after it lands.
+            setTimeout(() => {
+                if (!this.fill && !this.isFillable(document.activeElement)) this.hideHandle();
+            }, 0);
+        },
+        notify(text) {
+            this.info = text;
+            clearTimeout(this.infoTimer);
+            this.infoTimer = setTimeout(() => (this.info = ''), 3500);
+        },
+        toPersian(value) {
+            return String(value).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
         },
 
         queue(el) {
@@ -110,9 +138,11 @@ document.addEventListener('alpine:init', () => {
                 this.timer = setTimeout(() => this.flush(), 300);
                 return;
             }
-            const batch = Object.values(this.pending);
-            if (!batch.length) return;
-            this.pending = {};
+            // Large fills/pastes go in chunks well below the server's batch limit.
+            const keys = Object.keys(this.pending).slice(0, 400);
+            if (!keys.length) return;
+            const batch = keys.map((key) => this.pending[key]);
+            keys.forEach((key) => delete this.pending[key]);
             this.saving = true;
             this.status = 'saving';
             try {
@@ -122,6 +152,10 @@ document.addEventListener('alpine:init', () => {
                 this.status = problems ? 'error' : this.hasPendingOnly() ? 'dirty' : 'saved';
                 this.message = problems ? this.firstMessage(res) : '';
                 if (res.structureChanged) this.$wire.$refresh();
+                if (this.hasPendingOnly()) {
+                    clearTimeout(this.timer);
+                    this.timer = setTimeout(() => this.flush(), 50);
+                }
             } catch (e) {
                 batch.forEach((c) => {
                     const key = c.row + ':' + (c.field || c.column);
@@ -157,7 +191,7 @@ document.addEventListener('alpine:init', () => {
                 if (!el) return;
                 el.dataset.saved = c.value ?? '';
                 if (!c.field) el.dataset.version = c.version;
-                el.classList.remove('is-dirty', 'is-error', 'is-conflict');
+                el.classList.remove('is-dirty', 'is-error', 'is-conflict', 'is-out-of-range');
                 el.title = '';
                 if (this.pending[this.keyOf(el)] === undefined) this.show(el, c.value);
             });
@@ -211,6 +245,25 @@ document.addEventListener('alpine:init', () => {
             const c = Number(el.dataset.c);
             let target = null;
 
+            if (this.fill && e.key === 'Escape') {
+                e.preventDefault();
+                this.cancelFill();
+                return;
+            }
+            // Ctrl+D (any keyboard layout): copy the value of the nearest editable cell above.
+            if ((e.ctrlKey || e.metaKey) && e.code === 'KeyD' && this.isFillable(el)) {
+                e.preventDefault();
+                const above = this.columnCells(el.dataset.col)
+                    .filter((cell) => Number(cell.dataset.r) < r)
+                    .pop();
+                if (above) {
+                    el.value = this.raw(above);
+                    this.queue(el);
+                    el.select();
+                }
+                return;
+            }
+
             if (e.key === 'Enter') {
                 target = [r + (e.shiftKey ? -1 : 1), c];
             } else if (e.key === 'ArrowDown') {
@@ -235,6 +288,141 @@ document.addEventListener('alpine:init', () => {
             e.preventDefault();
             if (e.key === 'Enter') this.queue(el);
             if (next) next.focus();
+        },
+
+        // ------------------------------------------------------------ fill handle
+
+        /** Payroll cells only: personnel fields are unique per person and are never filled. */
+        isFillable(el) {
+            return this.isCell(el) && el.dataset.col !== undefined;
+        },
+        columnCells(col) {
+            const root = this.$refs.grid || this.$el;
+            return [...root.querySelectorAll(`input[data-cell][data-col="${col}"]`)];
+        },
+
+        createHandle() {
+            const handle = document.createElement('div');
+            handle.className = 'fill-handle';
+            handle.title = 'برای کپی مقدار در خانه‌های بالا یا پایین، بکشید';
+            handle.setAttribute('aria-hidden', 'true');
+            // Keep focus (and the selection) in the cell while grabbing the handle.
+            handle.addEventListener('mousedown', (e) => e.preventDefault());
+            handle.addEventListener('pointerdown', (e) => this.startFill(e));
+            handle.addEventListener('pointermove', (e) => this.moveFill(e));
+            handle.addEventListener('pointerup', () => this.endFill());
+            handle.addEventListener('pointercancel', () => this.cancelFill());
+            handle.addEventListener('lostpointercapture', () => this.fill && this.endFill());
+            this.handle = handle;
+        },
+        placeHandle(el) {
+            if (!this.handle || this.fill) return;
+            if (!this.isFillable(el)) {
+                this.hideHandle();
+                return;
+            }
+            const td = el.closest('td');
+            if (this.handle.parentElement !== td) {
+                this.handle.parentElement?.classList.remove('fill-host');
+                td.appendChild(this.handle);
+            }
+            td.classList.add('fill-host');
+        },
+        hideHandle() {
+            this.handle?.parentElement?.classList.remove('fill-host');
+            this.handle?.remove();
+        },
+
+        startFill(e) {
+            const td = this.handle.parentElement;
+            const source = td && td.querySelector('input[data-cell]');
+            if (!source || e.button > 0) return;
+            e.preventDefault();
+            this.handle.setPointerCapture(e.pointerId);
+            this.queue(source); // commit what is typed in the source first
+
+            this.fill = {
+                source,
+                col: source.dataset.col,
+                r0: Number(source.dataset.r),
+                r1: Number(source.dataset.r),
+                value: this.raw(source),
+                pointer: { x: e.clientX, y: e.clientY },
+                targets: [],
+                frame: null,
+            };
+            source.classList.add('is-fill-source');
+            this.$el.classList.add('is-filling');
+            this.fill.frame = requestAnimationFrame(() => this.autoScroll());
+        },
+        moveFill(e) {
+            if (!this.fill) return;
+            this.fill.pointer = { x: e.clientX, y: e.clientY };
+            this.updateFillRange();
+        },
+        /** Row index under the pointer, read in the source column so sideways drift does not matter. */
+        rowUnderPointer() {
+            const root = this.$refs.grid || this.$el;
+            const box = root.getBoundingClientRect();
+            const head = root.querySelector('thead')?.getBoundingClientRect().height || 0;
+            const foot = root.querySelector('tfoot')?.getBoundingClientRect().height || 0;
+            const cell = this.fill.source.closest('td').getBoundingClientRect();
+            const y = Math.min(Math.max(this.fill.pointer.y, box.top + head + 2), box.bottom - foot - 2);
+            const hit = document.elementFromPoint(cell.left + cell.width / 2, y);
+            const tr = hit && hit.closest('tbody tr[data-r]');
+            return tr ? Number(tr.dataset.r) : null;
+        },
+        updateFillRange() {
+            const r = this.rowUnderPointer();
+            if (r === null || r === this.fill.r1) return;
+            this.fill.r1 = r;
+            const lo = Math.min(this.fill.r0, r);
+            const hi = Math.max(this.fill.r0, r);
+            this.fill.targets = [];
+            this.columnCells(this.fill.col).forEach((cell) => {
+                const index = Number(cell.dataset.r);
+                const inRange = cell !== this.fill.source && index >= lo && index <= hi;
+                cell.classList.toggle('is-fill-target', inRange);
+                if (inRange) this.fill.targets.push(cell);
+            });
+        },
+        autoScroll() {
+            if (!this.fill) return;
+            const root = this.$refs.grid || this.$el;
+            const box = root.getBoundingClientRect();
+            const y = this.fill.pointer.y;
+            const edge = 36;
+            let step = 0;
+            if (y > box.bottom - edge) step = Math.min(28, (y - (box.bottom - edge)) / 2 + 4);
+            else if (y < box.top + 40 + edge) step = -Math.min(28, (box.top + 40 + edge - y) / 2 + 4);
+            if (step) {
+                root.scrollTop += step;
+                this.updateFillRange();
+            }
+            this.fill.frame = requestAnimationFrame(() => this.autoScroll());
+        },
+        endFill() {
+            const fill = this.fill;
+            if (!fill) return;
+            this.clearFill();
+            fill.targets.forEach((cell) => {
+                cell.value = fill.value;
+                this.queue(cell);
+                this.show(cell, fill.value);
+            });
+            if (fill.targets.length) {
+                this.notify(`مقدار در ${this.toPersian(fill.targets.length)} خانه کپی شد.`);
+            }
+        },
+        cancelFill() {
+            if (this.fill) this.clearFill();
+        },
+        clearFill() {
+            cancelAnimationFrame(this.fill.frame);
+            this.fill.source.classList.remove('is-fill-source');
+            this.fill.targets.forEach((cell) => cell.classList.remove('is-fill-target'));
+            this.$el.classList.remove('is-filling');
+            this.fill = null;
         },
 
         onPaste(e) {

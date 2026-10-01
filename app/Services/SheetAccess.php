@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\Role;
 use App\Enums\Stage;
+use App\Models\Note;
 use App\Models\Sheet;
 use App\Models\SheetColumn;
 use App\Models\SheetProject;
@@ -150,5 +151,11 @@ final class SheetAccess
     public function canNote(User $user, SheetRow $row): bool
     {
         return $user->is_active && $this->canViewRow($user, $row);
+    }
+
+    /** Only managers remove notes (rejection reasons included); the removal stays in the change log. */
+    public function canDeleteNote(User $user, Note $note): bool
+    {
+        return $this->canManage($user);
     }
 }

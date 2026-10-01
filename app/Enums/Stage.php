@@ -39,8 +39,30 @@ enum Stage: int
         return match ($this) {
             self::Draft => 'bg-amber-50 text-amber-800 ring-amber-200',
             self::ProjectApproved => 'bg-sky-50 text-sky-800 ring-sky-200',
-            self::HrApproved => 'bg-indigo-50 text-indigo-800 ring-indigo-200',
+            self::HrApproved => 'bg-violet-50 text-violet-800 ring-violet-200',
             self::Final => 'bg-emerald-50 text-emerald-800 ring-emerald-200',
+        };
+    }
+
+    /** Solid stage color for dots, bars and progress segments. */
+    public function dotClass(): string
+    {
+        return match ($this) {
+            self::Draft => 'bg-stage-draft',
+            self::ProjectApproved => 'bg-stage-project',
+            self::HrApproved => 'bg-stage-hr',
+            self::Final => 'bg-stage-final',
+        };
+    }
+
+    /** Readable text color in the stage hue (for numbers and labels on white). */
+    public function textClass(): string
+    {
+        return match ($this) {
+            self::Draft => 'text-amber-700',
+            self::ProjectApproved => 'text-sky-700',
+            self::HrApproved => 'text-violet-700',
+            self::Final => 'text-emerald-700',
         };
     }
 }

@@ -21,6 +21,8 @@ class Members extends Component
 {
     public string $name = '';
 
+    public string $jobTitle = '';
+
     public string $mobile = '';
 
     public string $role = 'editor';
@@ -30,6 +32,8 @@ class Members extends Component
 
     #[Locked]
     public ?int $editingId = null;
+
+    public string $editJobTitle = '';
 
     public string $editRole = '';
 
@@ -54,11 +58,21 @@ class Members extends Component
         $search = trim($this->search);
 
         return User::with('project')
-            ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w->where('name', 'like', "%{$search}%")->orWhere('mobile', 'like', '%'.Mobile::normalize($search).'%')))
+            ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w->where('name', 'like', "%{$search}%")
+                ->orWhere('job_title', 'like', "%{$search}%")
+                ->orWhere('mobile', 'like', '%'.Mobile::normalize($search).'%')))
             ->orderByDesc('is_active')
             ->orderByRaw("case role when 'manager' then 0 when 'approver' then 1 when 'editor' then 2 else 3 end")
             ->orderBy('name')
             ->get();
+    }
+
+    /** Titles already in use, offered as suggestions so the same job is spelled the same way. */
+    #[Computed]
+    public function jobTitles()
+    {
+        return User::whereNotNull('job_title')->where('job_title', '!=', '')
+            ->distinct()->orderBy('job_title')->limit(100)->pluck('job_title');
     }
 
     #[Computed]
@@ -72,10 +86,14 @@ class Members extends Component
         $this->authorizeManage();
         $this->mobile = Mobile::normalize($this->mobile);
         $this->name = trim($this->name);
+        $this->jobTitle = $this->cleanJobTitle($this->jobTitle);
 
         $errors = [];
         if ($this->name === '' || mb_strlen($this->name) > 120) {
             $errors['name'] = 'نام دعوت‌شونده الزامی است.';
+        }
+        if (mb_strlen($this->jobTitle) > 120) {
+            $errors['jobTitle'] = 'موقعیت شغلی حداکثر ۱۲۰ کاراکتر است.';
         }
         if (! Mobile::isValid($this->mobile)) {
             $errors['mobile'] = 'شماره موبایل معتبر نیست.';
@@ -90,6 +108,7 @@ class Members extends Component
         try {
             $user = User::create([
                 'name' => $this->name,
+                'job_title' => $this->jobTitle === '' ? null : $this->jobTitle,
                 'mobile' => $this->mobile,
                 'role' => $role,
                 'project_id' => $projectId,
@@ -102,8 +121,8 @@ class Members extends Component
         $this->inviteLink = $invites->createLink($user, auth()->user());
         $this->inviteFor = $user->name;
         $this->smsSent = $invites->sendLinkSms($user, $this->inviteLink);
-        $this->reset(['name', 'mobile', 'projectId']);
-        unset($this->members);
+        $this->reset(['name', 'jobTitle', 'mobile', 'projectId']);
+        unset($this->members, $this->jobTitles);
     }
 
     public function newLink(InviteService $invites, int $userId): void
@@ -120,6 +139,7 @@ class Members extends Component
         $this->authorizeManage();
         $user = User::findOrFail($userId);
         $this->editingId = $user->id;
+        $this->editJobTitle = (string) $user->job_title;
         $this->editRole = $user->role->value;
         $this->editProjectId = (string) ($user->project_id ?? '');
         $this->resetErrorBag();
@@ -135,18 +155,22 @@ class Members extends Component
         }
 
         [$role, $projectId, $errors] = $this->resolveRole($this->editRole, $this->editProjectId, $user->id, 'editProjectId');
+        $jobTitle = $this->cleanJobTitle($this->editJobTitle);
+        if (mb_strlen($jobTitle) > 120) {
+            $errors['editJobTitle'] = 'موقعیت شغلی حداکثر ۱۲۰ کاراکتر است.';
+        }
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
 
         try {
-            $user->update(['role' => $role, 'project_id' => $projectId]);
+            $user->update(['role' => $role, 'project_id' => $projectId, 'job_title' => $jobTitle === '' ? null : $jobTitle]);
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['editProjectId' => 'این پروژه تاییدکننده فعال دارد.']);
         }
 
         $this->editingId = null;
-        unset($this->members);
+        unset($this->members, $this->jobTitles);
     }
 
     public function cancelEdit(): void
@@ -204,6 +228,11 @@ class Members extends Component
         }
 
         return [$role->value, $projectId, $errors];
+    }
+
+    private function cleanJobTitle(string $value): string
+    {
+        return trim(preg_replace('/\s+/u', ' ', $value) ?? '');
     }
 
     private function authorizeManage(): void

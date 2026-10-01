@@ -5,6 +5,7 @@ namespace App\Livewire;
 use App\Enums\ReviewStatus;
 use App\Enums\Stage;
 use App\Models\ChangeLog;
+use App\Models\Project;
 use App\Models\Sheet;
 use App\Models\SheetCell;
 use App\Models\SheetColumn;
@@ -115,9 +116,12 @@ class Dashboard extends Component
 
     public function render()
     {
+        $projectIds = $this->activity->map(fn (ChangeLog $log) => $log->meta['project_id'] ?? null)->filter()->unique();
+
         return view('livewire.dashboard', [
             'stageCounts' => $this->stageCounts(),
             'rejectedStatus' => ReviewStatus::Rejected,
+            'projectNames' => $projectIds->isEmpty() ? collect() : Project::whereIn('id', $projectIds)->pluck('name', 'id'),
         ])->title('شیت‌ها');
     }
 }

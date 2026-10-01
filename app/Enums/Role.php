@@ -19,6 +19,16 @@ enum Role: string
         };
     }
 
+    public function chipClass(): string
+    {
+        return match ($this) {
+            self::Viewer => 'bg-slate-50 text-slate-700 ring-slate-200',
+            self::Editor => 'bg-sky-50 text-sky-800 ring-sky-200',
+            self::Approver => 'bg-violet-50 text-violet-800 ring-violet-200',
+            self::Manager => 'bg-accent-soft text-accent ring-indigo-200',
+        };
+    }
+
     public function description(): string
     {
         return match ($this) {

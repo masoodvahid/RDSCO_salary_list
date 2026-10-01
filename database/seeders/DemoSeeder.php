@@ -25,11 +25,11 @@ class DemoSeeder extends Seeder
         $projects = collect(['دماوند', 'سپهر', 'آتیه', 'البرز'])
             ->mapWithKeys(fn ($name) => [$name => Project::firstOrCreate(['name' => $name], ['is_active' => true])]);
 
-        $manager = User::updateOrCreate(['mobile' => '09120000000'], ['name' => 'مدیر منابع انسانی (نمونه)', 'role' => Role::Manager, 'project_id' => null, 'is_active' => true]);
-        User::updateOrCreate(['mobile' => '09120000001'], ['name' => 'ویرایشگر دماوند (نمونه)', 'role' => Role::Editor, 'project_id' => $projects['دماوند']->id, 'is_active' => true]);
-        User::updateOrCreate(['mobile' => '09120000002'], ['name' => 'مدیر پروژه دماوند (نمونه)', 'role' => Role::Approver, 'project_id' => $projects['دماوند']->id, 'is_active' => true]);
-        User::updateOrCreate(['mobile' => '09120000003'], ['name' => 'مالی (نمونه)', 'role' => Role::Approver, 'project_id' => null, 'is_active' => true]);
-        User::updateOrCreate(['mobile' => '09120000004'], ['name' => 'مدیرعامل (نمونه)', 'role' => Role::Viewer, 'project_id' => null, 'is_active' => true]);
+        $manager = User::updateOrCreate(['mobile' => '09120000000'], ['name' => 'مدیر منابع انسانی (نمونه)', 'job_title' => 'مدیر منابع انسانی', 'role' => Role::Manager, 'project_id' => null, 'is_active' => true]);
+        User::updateOrCreate(['mobile' => '09120000001'], ['name' => 'ویرایشگر دماوند (نمونه)', 'job_title' => 'مسئول اداری پروژه', 'role' => Role::Editor, 'project_id' => $projects['دماوند']->id, 'is_active' => true]);
+        User::updateOrCreate(['mobile' => '09120000002'], ['name' => 'مدیر پروژه دماوند (نمونه)', 'job_title' => 'مدیر داخلی پروژه', 'role' => Role::Approver, 'project_id' => $projects['دماوند']->id, 'is_active' => true]);
+        User::updateOrCreate(['mobile' => '09120000003'], ['name' => 'مالی (نمونه)', 'job_title' => 'مسئول حسابداری', 'role' => Role::Approver, 'project_id' => null, 'is_active' => true]);
+        User::updateOrCreate(['mobile' => '09120000004'], ['name' => 'مدیرعامل (نمونه)', 'job_title' => 'مدیرعامل', 'role' => Role::Viewer, 'project_id' => null, 'is_active' => true]);
 
         [$jy, $jm] = Jalali::previousMonth(...array_slice(Jalali::fromCarbon(now()), 0, 2));
         if (Sheet::where('jalali_year', $jy)->where('jalali_month', $jm)->exists()) {
@@ -38,6 +38,8 @@ class DemoSeeder extends Seeder
 
         $sheet = app(SheetBuilder::class)->create($manager, $jy, $jm);
         $columns = SheetColumn::where('sheet_id', $sheet->id)->orderBy('position')->get()->keyBy('title');
+        $columns->get('کارکرد (روز)')?->update(['min_value' => '0', 'max_value' => '31']);
+        $columns->get('اضافه‌کار (ساعت)')?->update(['min_value' => '0', 'max_value' => '120']);
 
         $people = [
             ['محمد', 'کریمی', 'دماوند'], ['زهرا', 'احمدی', 'دماوند'], ['علی', 'رضایی', 'دماوند'], ['فاطمه', 'موسوی', 'دماوند'],

@@ -51,6 +51,18 @@ class SupportTest extends TestCase
         $this->assertSame('300000000.5', Digits::add('150000000.25', '150000000.25'));
     }
 
+    public function test_numbers_compare_exactly(): void
+    {
+        $this->assertSame(1, Digits::compare('10', '9'));
+        $this->assertSame(-1, Digits::compare('-5', '3'));
+        $this->assertSame(1, Digits::compare('-5', '-10'));
+        $this->assertSame(0, Digits::compare('1.50', '1.5'));
+        $this->assertSame(-1, Digits::compare('1.05', '1.5'));
+        $this->assertSame(0, Digits::compare('۱۲٬۵۰۰', '12500'));
+        $this->assertSame(-1, Digits::compare('31', '31.0001'));
+        $this->assertSame(-1, Digits::compare('123456789012345678901234567890', '123456789012345678901234567891'));
+    }
+
     public function test_national_code_checksum(): void
     {
         $this->assertTrue(NationalCode::isValid('0499370899'));

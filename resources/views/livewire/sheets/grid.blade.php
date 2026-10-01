@@ -12,22 +12,24 @@
         'national_code' => ['کد ملی', '', 116, true],
     ];
     $showReview = $user->isManager() || $user->isGlobalApprover();
+    $plusIcon = '<svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+    $trashIcon = '<svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>';
     $lockIcon = '<svg class="size-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 @endphp
 
 <div class="flex h-[calc(100vh-3.5rem)] flex-col" x-data="sheetGrid(@js($gridConfig))">
 
     {{-- ============ Toolbar ============ --}}
-    <div class="no-print border-b border-zinc-200 bg-white px-4 py-3 sm:px-6">
+    <div class="no-print border-b border-line bg-white px-4 py-3 sm:px-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex flex-wrap items-center gap-2.5">
-                <a href="{{ route('dashboard', ['sheet' => $sheet->id]) }}" wire:navigate class="text-sm text-zinc-500 hover:text-zinc-900">شیت‌ها</a>
+                <a href="{{ route('dashboard', ['sheet' => $sheet->id]) }}" wire:navigate class="text-sm text-ink-soft hover:text-accent">شیت‌ها</a>
                 <span class="text-zinc-300" aria-hidden="true">/</span>
-                <h1 class="text-lg font-bold">شیت {{ $sheet->title() }}@if ($currentSp) <span class="font-normal text-zinc-500">· {{ $currentSp->project->name }}</span>@endif</h1>
+                <h1 class="text-lg font-extrabold">شیت {{ $sheet->title() }}@if ($currentSp) <span class="font-medium text-ink-soft">/ {{ $currentSp->project->name }}</span>@endif</h1>
                 @if ($currentSp)
                     <x-stage-badge :stage="$currentSp->stage" />
                     @if ($currentSp->submitted_at && $currentSp->stage === Stage::Draft)
-                        <span class="chip bg-zinc-50 text-zinc-700 ring-zinc-200">ارسال شده برای تایید</span>
+                        <span class="chip bg-sky-50 text-sky-800 ring-sky-200">ارسال شده برای تایید</span>
                     @endif
                 @endif
                 @if ($isManager)
@@ -56,14 +58,15 @@
                     <button type="button" wire:click="openReopen({{ $currentSp->id }})" class="btn">بازگشایی</button>
                 @endif
                 @if ($isManager)
-                    <span class="mx-1 hidden h-6 w-px bg-zinc-200 sm:block" aria-hidden="true"></span>
+                    <span class="mx-1 hidden h-6 w-px bg-line sm:block" aria-hidden="true"></span>
                     <button type="button" wire:click="openImport" class="btn">ورود از اکسل</button>
-                    <button type="button" wire:click="openColumn" class="btn">+ ستون</button>
-                    <button type="button" wire:click="openRow" class="btn">+ ردیف</button>
-                    <button type="button" wire:click="openProjects" class="btn">پروژه‌های این ماه · {{ Digits::toPersian($sheetProjects->count()) }}</button>
+                    <button type="button" wire:click="openColumn" class="btn">{!! $plusIcon !!} ستون جدید</button>
+                    <button type="button" wire:click="openRow" class="btn">{!! $plusIcon !!} ردیف جدید</button>
+                    <button type="button" wire:click="openProjects" class="btn">پروژه‌های این ماه <span class="rounded-full bg-accent-soft px-1.5 text-xs font-bold text-accent">{{ Digits::toPersian($sheetProjects->count()) }}</span></button>
                 @endif
-                <a href="{{ route('sheets.export', ['sheet' => $sheet->id, 'project' => $this->currentProjectId()]) }}" class="btn">خروجی اکسل</a>
-                <a href="{{ route('sheets.print', ['sheet' => $sheet->id, 'project' => $this->currentProjectId()]) }}" target="_blank" class="btn">چاپ / PDF</a>
+                <span class="mx-1 hidden h-6 w-px bg-line sm:block" aria-hidden="true"></span>
+                <a href="{{ route('sheets.export', ['sheet' => $sheet->id, 'project' => $this->currentProjectId()]) }}" class="btn btn-ghost text-emerald-700 hover:bg-emerald-50">خروجی اکسل</a>
+                <a href="{{ route('sheets.print', ['sheet' => $sheet->id, 'project' => $this->currentProjectId()]) }}" target="_blank" class="btn btn-ghost text-ink-soft">چاپ / PDF</a>
             </div>
         </div>
 
@@ -71,21 +74,22 @@
             <div role="group" aria-label="فیلتر پروژه" class="flex flex-wrap items-center gap-1.5">
                 @if ($user->hasAllProjects())
                     <button type="button" wire:click="filterProject(null)" aria-pressed="{{ $projectFilter === null ? 'true' : 'false' }}"
-                        @class(['h-8 rounded-full border px-3 text-[13px]', 'border-zinc-900 bg-zinc-900 font-semibold text-white' => $projectFilter === null, 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50' => $projectFilter !== null])>همه پروژه‌ها</button>
+                        @class(['h-8 rounded-full border px-3 text-[13px]', 'border-accent bg-accent font-semibold text-white' => $projectFilter === null, 'border-line-strong bg-white text-ink hover:border-accent/40 hover:bg-accent-soft' => $projectFilter !== null])>همه پروژه‌ها</button>
                     @foreach ($this->visibleProjects as $sp)
                         @php $active = (string) $projectFilter === (string) $sp->project_id; @endphp
                         <button type="button" wire:key="filter-{{ $sp->id }}" wire:click="filterProject({{ $sp->project_id }})" aria-pressed="{{ $active ? 'true' : 'false' }}"
-                            @class(['flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px]', 'border-zinc-900 bg-zinc-900 font-semibold text-white' => $active, 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50' => ! $active])>
-                            <span @class(['size-1.5 rounded-full', 'bg-amber-500' => $sp->stage === Stage::Draft, 'bg-sky-500' => $sp->stage === Stage::ProjectApproved, 'bg-indigo-500' => $sp->stage === Stage::HrApproved, 'bg-emerald-500' => $sp->stage === Stage::Final]) aria-hidden="true"></span>
+                            @class(['flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px]', 'border-accent bg-accent font-semibold text-white' => $active, 'border-line-strong bg-white text-ink hover:border-accent/40 hover:bg-accent-soft' => ! $active])
+                            title="{{ $sp->stage->label() }}">
+                            <span @class(['size-2 rounded-full', $sp->stage->dotClass(), 'ring-2 ring-white/80' => $active]) aria-hidden="true"></span>
                             {{ $sp->project->name }}
                         </button>
                     @endforeach
                     @if ($isManager && $unassignedCount)
                         <button type="button" wire:click="filterProject('none')"
-                            @class(['h-8 rounded-full border px-3 text-[13px]', 'border-amber-700 bg-amber-700 font-semibold text-white' => $projectFilter === 'none', 'border-amber-300 bg-amber-50 text-amber-900' => $projectFilter !== 'none'])>بدون پروژه · {{ Digits::toPersian($unassignedCount) }}</button>
+                            @class(['h-8 rounded-full border px-3 text-[13px]', 'border-amber-600 bg-amber-600 font-semibold text-white' => $projectFilter === 'none', 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100' => $projectFilter !== 'none'])>بدون پروژه <b class="font-bold">{{ Digits::toPersian($unassignedCount) }}</b></button>
                     @endif
                 @else
-                    <span class="text-sm text-zinc-600">شما فقط پرسنل پروژه <b>{{ $user->project?->name }}</b> را می‌بینید.</span>
+                    <span class="text-sm text-ink-soft">شما فقط پرسنل پروژه <b class="text-ink">{{ $user->project?->name }}</b> را می‌بینید.</span>
                 @endif
             </div>
             <div class="flex items-center gap-2">
@@ -102,19 +106,22 @@
         </div>
 
         @if (! $modal && ($errors->has('otpCode') || $errors->has('approval') || $errors->has('project') || $errors->has('column')))
-            <div class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-800" role="alert">
+            <div class="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-800" role="alert">
                 {{ $errors->first('otpCode') ?: ($errors->first('approval') ?: ($errors->first('project') ?: $errors->first('column'))) }}
             </div>
         @endif
 
         @if ($currentSp && $approvals->isNotEmpty())
-            <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-zinc-100 pt-2.5 text-[12.5px] text-zinc-600">
-                <span class="font-semibold text-zinc-800">امضاها:</span>
+            <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-2.5 text-[12.5px] text-ink-soft">
+                <span class="font-semibold text-ink">امضاها</span>
                 @foreach ($approvals as $approval)
-                    <span wire:key="approval-{{ $approval->id }}" @class(['line-through opacity-60' => $approval->revoked_at])>
-                        {{ $approval->stage->actionLabel() }} · {{ $approval->user?->name }} · {{ Jalali::formatLong($approval->created_at) }} {{ Digits::toPersian($approval->created_at->format('H:i')) }}
+                    <span wire:key="approval-{{ $approval->id }}" @class(['inline-flex flex-wrap items-center gap-1.5 rounded-lg px-2 py-1', 'bg-canvas line-through opacity-60' => $approval->revoked_at, 'bg-canvas' => ! $approval->revoked_at])
+                          title="{{ $approval->revoked_at ? 'این امضا باطل شده است' : '' }}">
+                        <span class="size-1.5 rounded-full {{ $approval->stage->dotClass() }}" aria-hidden="true"></span>
+                        <b class="font-semibold text-ink">{{ $approval->stage->actionLabel() }}:</b>
+                        {{ $approval->user?->nameWithTitle() }}، {{ Jalali::formatLong($approval->created_at) }} ساعت {{ Digits::toPersian($approval->created_at->format('H:i')) }}
                         @if (! $approval->revoked_at && $currentHash && ! hash_equals($approval->data_hash, $currentHash))
-                            <span class="chip ms-1 bg-orange-50 text-orange-800 ring-orange-200" title="داده‌های این پروژه بعد از این امضا تغییر کرده است">تغییر پس از تایید</span>
+                            <span class="chip bg-orange-50 text-orange-800 ring-orange-200" title="داده‌های این پروژه بعد از این امضا تغییر کرده است">تغییر پس از تایید</span>
                         @endif
                     </span>
                 @endforeach
@@ -130,23 +137,34 @@
                     <th class="sticky-1 text-center" style="width: 48px">#</th>
                     @foreach ($identityFields as $field => [$label, $sticky, $width, $isNum])
                         <th class="{{ $sticky }} px-2" style="width: {{ $width }}px">
-                            <span class="flex items-center gap-1 {{ $isManager ? '' : 'text-zinc-500' }}">
+                            <span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">
                                 @unless ($isManager) {!! $lockIcon !!} @endunless {{ $label }}
                             </span>
                         </th>
                     @endforeach
                     <th class="px-2" style="width: 140px">
-                        <span class="flex items-center gap-1 {{ $isManager ? '' : 'text-zinc-500' }}">@unless ($isManager) {!! $lockIcon !!} @endunless پروژه</span>
+                        <span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">@unless ($isManager) {!! $lockIcon !!} @endunless پروژه</span>
                     </th>
                     @foreach ($columns as $column)
-                        <th class="px-2" style="width: {{ $column->type === ColumnType::Text ? 180 : 130 }}px" wire:key="col-{{ $column->id }}">
+                        @php
+                            $headerHint = collect([
+                                $column->is_locked ? 'ستون قفل: فقط مدیر ویرایش می‌کند' : null,
+                                $column->hasRange() ? 'مقدار مجاز: '.$column->rangeLabel() : null,
+                            ])->filter()->implode(' — ');
+                        @endphp
+                        <th @class(['px-2', 'is-locked' => $column->is_locked]) style="width: {{ $column->type === ColumnType::Text ? 180 : 130 }}px" wire:key="col-{{ $column->id }}" title="{{ $headerHint }}">
                             <div class="flex items-center justify-between gap-1">
-                                <span class="flex min-w-0 items-center gap-1 truncate {{ $column->is_locked ? 'text-zinc-500' : '' }}" title="{{ $column->is_locked ? 'ستون قفل: فقط مدیر ویرایش می‌کند' : '' }}">
-                                    @if ($column->is_locked) {!! $lockIcon !!} @endif
-                                    <span class="truncate">{{ $column->title }}</span>
+                                <span class="min-w-0 leading-tight">
+                                    <span class="flex items-center gap-1">
+                                        @if ($column->is_locked) {!! $lockIcon !!} @endif
+                                        <span class="truncate">{{ $column->title }}</span>
+                                    </span>
+                                    @if ($column->hasRange())
+                                        <span class="mt-0.5 block truncate text-[10.5px] font-normal opacity-70">{{ $column->rangeLabel() }}</span>
+                                    @endif
                                 </span>
                                 @if ($isManager)
-                                    <button type="button" wire:click="openColumn({{ $column->id }})" class="rounded px-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-800" aria-label="تنظیمات ستون {{ $column->title }}">▾</button>
+                                    <button type="button" wire:click="openColumn({{ $column->id }})" class="shrink-0 rounded px-1 text-ink-soft/60 hover:bg-white hover:text-accent" aria-label="تنظیمات ستون {{ $column->title }}">▾</button>
                                 @endif
                             </div>
                         </th>
@@ -165,8 +183,8 @@
                         $identityEditable = $access->canEditIdentity($user, $rowSp);
                         $canReviewRow = $access->canReview($user, $rowSp);
                     @endphp
-                    <tr wire:key="row-{{ $row->id }}" @class(['is-rejected' => $row->review_status === ReviewStatus::Rejected])>
-                        <td class="sticky-1 ro text-center text-xs text-zinc-500">{{ Digits::toPersian($loop->iteration) }}</td>
+                    <tr wire:key="row-{{ $row->id }}" data-r="{{ $r }}" @class(['is-rejected' => $row->review_status === ReviewStatus::Rejected])>
+                        <td class="sticky-1 ro text-center text-xs text-ink-soft">{{ Digits::toPersian($loop->iteration) }}</td>
 
                         @foreach ($identityFields as $field => [$label, $sticky, $width, $isNum])
                             @if ($identityEditable)
@@ -201,18 +219,20 @@
                                 $cell = $cells->get($column->id);
                                 $value = $cell?->value;
                                 $display = $column->isNumber() ? Digits::group($value) : $value;
+                                $outOfRange = $column->isOutOfRange($value);
+                                $cellTitle = $outOfRange ? 'خارج از بازه مجاز ('.$column->rangeLabel().')' : ($column->isNumber() ? '' : $value);
                             @endphp
                             @if ($access->canEditCell($user, $sheet, $row, $column, $rowSp))
                                 <td>
                                     <input data-cell data-row="{{ $row->id }}" data-col="{{ $column->id }}" data-type="{{ $column->type->value }}"
                                            data-version="{{ $cell?->version ?? 0 }}" data-saved="{{ $value }}" data-r="{{ $r }}" data-c="{{ 4 + $loop->index }}"
                                            value="{{ $display }}" autocomplete="off" @if ($column->isNumber()) inputmode="decimal" @endif
-                                           aria-label="{{ $column->title }} · {{ $row->fullName() }}"
-                                           class="cell {{ $column->isNumber() ? 'num text-left' : '' }}">
+                                           aria-label="{{ $column->title }} · {{ $row->fullName() }}" @if ($outOfRange) title="{{ $cellTitle }}" @endif
+                                           @class(['cell', 'num text-left' => $column->isNumber(), 'is-out-of-range' => $outOfRange])>
                                 </td>
                             @else
                                 <td class="ro">
-                                    <span class="cell-text {{ $column->isNumber() ? 'num text-left' : '' }}" title="{{ $column->isNumber() ? '' : $value }}">{{ $display }}</span>
+                                    <span @class(['cell-text', 'num text-left' => $column->isNumber(), 'is-out-of-range' => $outOfRange]) title="{{ $cellTitle }}">{{ $display }}</span>
                                 </td>
                             @endif
                         @endforeach
@@ -221,26 +241,26 @@
                             @if ($canReviewRow)
                                 <div class="flex items-center gap-1">
                                     <button type="button" wire:click="approveRow({{ $row->id }})" aria-label="تایید رکورد {{ $row->fullName() }}" aria-pressed="{{ $row->review_status === ReviewStatus::Approved ? 'true' : 'false' }}"
-                                        @class(['flex h-7 w-8 items-center justify-center rounded-md border text-sm font-bold', 'border-emerald-700 bg-emerald-700 text-white' => $row->review_status === ReviewStatus::Approved, 'border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50' => $row->review_status !== ReviewStatus::Approved])>✓</button>
+                                        @class(['flex h-7 w-8 items-center justify-center rounded-md border text-sm font-bold', 'border-emerald-600 bg-emerald-600 text-white' => $row->review_status === ReviewStatus::Approved, 'border-line-strong bg-white text-ink-soft hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700' => $row->review_status !== ReviewStatus::Approved])>✓</button>
                                     <button type="button" wire:click="openReject({{ $row->id }})" aria-label="رد رکورد {{ $row->fullName() }}"
-                                        @class(['flex h-7 w-8 items-center justify-center rounded-md border text-sm font-bold', 'border-red-700 bg-red-700 text-white' => $row->review_status === ReviewStatus::Rejected, 'border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50' => $row->review_status !== ReviewStatus::Rejected])>✕</button>
+                                        @class(['flex h-7 w-8 items-center justify-center rounded-md border text-sm font-bold', 'border-red-600 bg-red-600 text-white' => $row->review_status === ReviewStatus::Rejected, 'border-line-strong bg-white text-ink-soft hover:border-red-300 hover:bg-red-50 hover:text-red-700' => $row->review_status !== ReviewStatus::Rejected])>✕</button>
                                 </div>
                             @else
-                                <span @class(['cell-text text-xs', 'text-emerald-700' => $row->review_status === ReviewStatus::Approved, 'font-semibold text-red-700' => $row->review_status === ReviewStatus::Rejected, 'text-zinc-500' => $row->review_status === ReviewStatus::Pending])>{{ $row->review_status->label() }}</span>
+                                <span @class(['cell-text text-xs font-semibold', 'text-emerald-700' => $row->review_status === ReviewStatus::Approved, 'text-red-700' => $row->review_status === ReviewStatus::Rejected, 'font-normal text-ink-soft' => $row->review_status === ReviewStatus::Pending])>{{ $row->review_status->label() }}</span>
                             @endif
                         </td>
 
                         <td class="px-1.5">
                             <div class="flex items-center justify-center gap-1">
                                 <button type="button" wire:click="openNotes({{ $row->id }})" aria-label="یادداشت‌های {{ $row->fullName() }}"
-                                    @class(['flex h-7 min-w-8 items-center justify-center gap-1 rounded-md px-1.5 text-xs', 'bg-accent-soft font-semibold text-accent' => $row->notes_count, 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700' => ! $row->notes_count])>
+                                    @class(['flex h-7 min-w-8 items-center justify-center gap-1 rounded-md px-1.5 text-xs', 'bg-accent-soft font-semibold text-accent' => $row->notes_count, 'text-zinc-400 hover:bg-accent-soft hover:text-accent' => ! $row->notes_count])>
                                     <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
                                     @if ($row->notes_count) {{ Digits::toPersian($row->notes_count) }} @endif
                                 </button>
                                 @if ($identityEditable)
                                     <button type="button" wire:click="deleteRow({{ $row->id }})" wire:confirm="ردیف «{{ $row->fullName() }}» حذف شود؟ این کار در لاگ ثبت می‌شود."
                                         class="flex size-7 items-center justify-center rounded-md text-zinc-400 hover:bg-red-50 hover:text-red-700" aria-label="حذف ردیف {{ $row->fullName() }}">
-                                        <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+                                        {!! $trashIcon !!}
                                     </button>
                                 @endif
                             </div>
@@ -248,11 +268,11 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="{{ 8 + $columns->count() }}" class="py-16 text-center text-sm text-zinc-500">
+                        <td colspan="{{ 8 + $columns->count() }}" class="py-16 text-center text-sm text-ink-soft">
                             @if ($search !== '' || $reviewFilter !== '')
                                 ردیفی با این فیلتر پیدا نشد.
                             @elseif ($isManager)
-                                هنوز ردیفی نیست. با «ورود از اکسل» یا «+ ردیف» پرسنل را اضافه کنید.
+                                هنوز ردیفی نیست. با «ورود از اکسل» یا «ردیف جدید» پرسنل را اضافه کنید.
                             @else
                                 پرسنلی برای این پروژه در این ماه ثبت نشده است.
                             @endif
@@ -266,7 +286,7 @@
                     <tr>
                         <td class="sticky-1"></td>
                         <td class="sticky-2"><span class="cell-text">جمع</span></td>
-                        <td class="sticky-3"><span class="cell-text text-xs font-normal text-zinc-600">{{ Digits::toPersian($rows->count()) }} نفر</span></td>
+                        <td class="sticky-3"><span class="cell-text text-xs font-normal text-ink-soft">{{ Digits::toPersian($rows->count()) }} نفر</span></td>
                         <td></td><td></td><td></td>
                         @foreach ($columns as $column)
                             <td><span class="cell-text num text-left">{{ $column->isNumber() ? Digits::group($totals[$column->id] ?? '0') : '' }}</span></td>
@@ -279,26 +299,28 @@
     </div>
 
     {{-- ============ Status bar ============ --}}
-    <div class="no-print flex flex-wrap items-center justify-between gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-2 text-xs text-zinc-600 sm:px-6">
-        <div class="flex items-center gap-2" aria-live="polite">
-            <span x-show="status === 'saved'">✓ همه تغییرات ذخیره شده است</span>
-            <span x-show="status === 'saving'" x-cloak>در حال ذخیره…</span>
-            <span x-show="status === 'dirty'" x-cloak>تغییرات در صف ذخیره</span>
+    <div class="no-print flex flex-wrap items-center justify-between gap-2 border-t border-line bg-white px-4 py-2 text-xs text-ink-soft sm:px-6">
+        <div class="flex items-center gap-3" aria-live="polite">
+            <span x-show="status === 'saved'" class="flex items-center gap-1.5 text-emerald-700"><span class="size-1.5 rounded-full bg-stage-final" aria-hidden="true"></span>همه تغییرات ذخیره شده است</span>
+            <span x-show="status === 'saving'" x-cloak class="flex items-center gap-1.5 text-accent"><span class="size-1.5 animate-pulse rounded-full bg-accent" aria-hidden="true"></span>در حال ذخیره…</span>
+            <span x-show="status === 'dirty'" x-cloak class="flex items-center gap-1.5 text-amber-700"><span class="size-1.5 rounded-full bg-stage-draft" aria-hidden="true"></span>تغییرات در صف ذخیره</span>
             <span x-show="status === 'error'" x-cloak class="font-semibold text-red-700" x-text="message || 'بعضی خانه‌ها ذخیره نشدند؛ روی خانه قرمز بروید تا علت را ببینید.'"></span>
+            <span x-show="info" x-cloak x-text="info" class="rounded-md bg-accent-soft px-2 py-0.5 font-semibold text-accent"></span>
         </div>
-        <div class="flex flex-wrap items-center gap-4">
-            <span class="flex items-center gap-1">{!! $lockIcon !!} ستون قفل: فقط مدیر ویرایش می‌کند</span>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span class="flex items-center gap-1 text-amber-800">{!! $lockIcon !!} ستون قفل: فقط مدیر ویرایش می‌کند</span>
             @unless ($isManager)
                 <span>افزودن ردیف: فقط مدیر</span>
             @endunless
-            <span>Enter و کلیدهای جهت برای جابه‌جایی · چسباندن چند خانه از اکسل</span>
+            <span class="hidden lg:inline">Enter و کلیدهای جهت برای جابه‌جایی، چسباندن چند خانه از اکسل، کشیدن مربع گوشه خانه برای کپی به خانه‌های پایین (Ctrl+D: کپی از خانه بالا)</span>
         </div>
     </div>
 
     {{-- ============ Notice ============ --}}
     @if ($notice)
         <div wire:key="notice-{{ $noticeId }}" x-data="{ show: true }" x-init="setTimeout(() => show = false, 4000)" x-show="show" x-transition.opacity
-             class="no-print fixed bottom-14 left-4 z-40 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm text-white shadow-lg" role="status">
+             class="no-print fixed bottom-14 left-4 z-40 flex items-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-sm text-white shadow-xl shadow-ink/20" role="status">
+            <span class="size-1.5 rounded-full bg-stage-final" aria-hidden="true"></span>
             {{ $notice }}
         </div>
     @endif
@@ -314,21 +336,45 @@
                 </div>
                 <div>
                     <label for="column-type" class="label">نوع داده</label>
-                    <select id="column-type" wire:model="columnType" class="input">
+                    <select id="column-type" wire:model.live="columnType" class="input">
                         @foreach (ColumnType::cases() as $type)
                             <option value="{{ $type->value }}">{{ $type->label() }}</option>
                         @endforeach
                     </select>
                     @error('columnType') <p class="error">{{ $message }}</p> @enderror
                 </div>
-                <label class="flex items-start gap-2.5 text-sm">
-                    <input type="checkbox" wire:model="columnLocked" class="mt-1 size-4 rounded border-zinc-300">
-                    <span><b>قفل:</b> فقط مدیر ویرایش کند <span class="block text-xs text-zinc-500">ویرایشگرها و تاییدکننده‌های پروژه این ستون را فقط می‌بینند. مقادیرش در کپی ماه بعد منتقل می‌شود.</span></span>
+                @if ($columnType === ColumnType::Number->value)
+                    <fieldset>
+                        <legend class="label">بازه مجاز <span class="font-normal text-ink-soft">(اختیاری)</span></legend>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label for="column-min" class="sr-only">حداقل</label>
+                                <div class="relative">
+                                    <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-ink-soft">حداقل</span>
+                                    <input id="column-min" wire:model="columnMin" inputmode="decimal" dir="ltr" class="input num pe-14 text-left" placeholder="بدون محدودیت">
+                                </div>
+                                @error('columnMin') <p class="error">{{ $message }}</p> @enderror
+                            </div>
+                            <div>
+                                <label for="column-max" class="sr-only">حداکثر</label>
+                                <div class="relative">
+                                    <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-ink-soft">حداکثر</span>
+                                    <input id="column-max" wire:model="columnMax" inputmode="decimal" dir="ltr" class="input num pe-14 text-left" placeholder="بدون محدودیت">
+                                </div>
+                                @error('columnMax') <p class="error">{{ $message }}</p> @enderror
+                            </div>
+                        </div>
+                        <p class="hint">اگر خالی بماند، محدودیتی ندارد. مقدار خارج از بازه ذخیره نمی‌شود؛ مقادیر فعلی دست نمی‌خورند و فقط با رنگ قرمز مشخص می‌شوند.</p>
+                    </fieldset>
+                @endif
+                <label class="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm">
+                    <input type="checkbox" wire:model="columnLocked" class="mt-1 size-4 rounded border-zinc-300 accent-amber-600">
+                    <span><b>قفل:</b> فقط مدیر ویرایش کند <span class="block text-xs leading-5 text-ink-soft">ویرایشگرها و تاییدکننده‌های پروژه این ستون را فقط می‌بینند. مقادیرش در کپی ماه بعد منتقل می‌شود.</span></span>
                 </label>
                 @error('column') <p class="error">{{ $message }}</p> @enderror
                 @if ($targetId)
-                    <div class="flex items-center gap-2 border-t border-zinc-100 pt-4 text-sm">
-                        <span class="text-zinc-600">جابه‌جایی:</span>
+                    <div class="flex items-center gap-2 border-t border-line pt-4 text-sm">
+                        <span class="text-ink-soft">جابه‌جایی:</span>
                         <button type="button" wire:click="moveColumn(-1)" class="btn btn-sm">→ قبل</button>
                         <button type="button" wire:click="moveColumn(1)" class="btn btn-sm">بعد ←</button>
                     </div>
@@ -393,7 +439,7 @@
                 <label for="reject-note" class="label">یادداشت برای پروژه</label>
                 <textarea id="reject-note" wire:model="rejectNote" rows="3" class="input h-auto py-2 leading-6" placeholder="مثلاً: اضافه‌کار با گزارش تردد همخوانی ندارد؛ لطفاً اصلاح کنید." autofocus></textarea>
                 @error('rejectNote') <p class="error">{{ $message }}</p> @enderror
-                <p class="mt-2 text-xs leading-5 text-zinc-500">
+                <p class="hint">
                     @if ($user->isManager())
                         لیست این پروژه برای اصلاح به پروژه برمی‌گردد و تاییدهای قبلی باطل می‌شود.
                     @else
@@ -412,19 +458,29 @@
         <x-modal title="یادداشت‌ها · {{ $notesRow->fullName() }}" close="closeModal">
             <ul class="max-h-80 space-y-3 overflow-y-auto">
                 @forelse ($notesRow->notes as $note)
-                    <li wire:key="note-{{ $note->id }}" @class(['rounded-lg px-3 py-2.5 text-sm leading-6', 'bg-red-50 text-red-900' => $note->isRejection(), 'bg-zinc-50' => ! $note->isRejection()])>
-                        <div class="mb-0.5 text-xs text-zinc-500">
-                            <b class="text-zinc-800">{{ $note->user?->name }}</b>
-                            @if ($note->isRejection()) · <span class="font-semibold text-red-700">دلیل رد</span> @endif
-                            · {{ Jalali::formatLong($note->created_at) }} {{ Digits::toPersian($note->created_at->format('H:i')) }}
+                    <li wire:key="note-{{ $note->id }}" @class(['group flex gap-3 rounded-xl px-3 py-2.5 text-sm leading-6', 'bg-red-50 text-red-950' => $note->isRejection(), 'bg-canvas' => ! $note->isRejection()])>
+                        <x-avatar :name="$note->user?->name ?? '؟'" size="size-8" class="mt-0.5" />
+                        <div class="min-w-0 flex-1">
+                            <div class="mb-0.5 flex flex-wrap items-center gap-x-2 text-xs text-ink-soft">
+                                <b class="text-ink">{{ $note->user?->name }}</b>
+                                @if ($note->user?->job_title) <span>{{ $note->user->job_title }}</span> @endif
+                                @if ($note->isRejection()) <span class="chip bg-red-100 text-red-800 ring-red-200">دلیل رد</span> @endif
+                                <span>{{ Jalali::formatLong($note->created_at) }} ساعت {{ Digits::toPersian($note->created_at->format('H:i')) }}</span>
+                            </div>
+                            <p class="break-words whitespace-pre-line">{{ $note->body }}</p>
                         </div>
-                        {{ $note->body }}
+                        @if ($isManager)
+                            <button type="button" wire:click="deleteNote({{ $note->id }})" wire:confirm="این یادداشت حذف شود؟ متن آن در لاگ تغییرات می‌ماند."
+                                class="flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-400 hover:bg-red-100 hover:text-red-700" aria-label="حذف یادداشت {{ $note->user?->name }}">
+                                {!! $trashIcon !!}
+                            </button>
+                        @endif
                     </li>
                 @empty
-                    <li class="py-4 text-center text-sm text-zinc-500">یادداشتی برای این ردیف نیست.</li>
+                    <li class="py-6 text-center text-sm text-ink-soft">یادداشتی برای این ردیف نیست.</li>
                 @endforelse
             </ul>
-            <form wire:submit="addNote" class="mt-4 border-t border-zinc-100 pt-4">
+            <form wire:submit="addNote" class="mt-4 border-t border-line pt-4">
                 <label for="new-note" class="label">یادداشت شما</label>
                 <textarea id="new-note" wire:model="newNote" rows="2" class="input h-auto py-2 leading-6"></textarea>
                 @error('newNote') <p class="error">{{ $message }}</p> @enderror
@@ -438,13 +494,13 @@
     @if ($modal === 'otp' && isset($targetProject) && $targetProject)
         <x-modal title="تایید با کد پیامکی" close="closeModal" width="max-w-md">
             <form wire:submit="confirmApproval" id="otp-form" class="space-y-4">
-                <div class="rounded-lg bg-zinc-50 px-4 py-3 text-sm leading-7">
-                    <div><span class="text-zinc-500">لیست:</span> <b>{{ $targetProject->project->name }}</b> · {{ $sheet->title() }}</div>
+                <div class="rounded-xl bg-canvas px-4 py-3 text-sm leading-7">
+                    <div><span class="text-ink-soft">لیست:</span> <b>{{ $targetProject->project->name }}</b> · {{ $sheet->title() }}</div>
                     @if ($otpTarget)
-                        <div><span class="text-zinc-500">اقدام:</span> <b>{{ $otpTarget->actionLabel() }}</b></div>
+                        <div><span class="text-ink-soft">اقدام:</span> <b>{{ $otpTarget->actionLabel() }}</b></div>
                     @endif
                 </div>
-                <p class="text-[13px] leading-6 text-zinc-600">کد به موبایل شما (<span dir="ltr" class="num">{{ $user->maskedMobile() }}</span>) ارسال شد. وارد کردن کد به منزله امضای نسخه فعلی این لیست است؛ اگر کسی تا آن لحظه داده را تغییر دهد، تایید انجام نمی‌شود.</p>
+                <p class="text-[13px] leading-6 text-ink-soft">کد به موبایل شما (<span dir="ltr" class="num">{{ $user->maskedMobile() }}</span>) ارسال شد. وارد کردن کد به منزله امضای نسخه فعلی این لیست است؛ اگر کسی تا آن لحظه داده را تغییر دهد، تایید انجام نمی‌شود.</p>
                 <div>
                     <label for="otp-code" class="label">کد تایید</label>
                     <input id="otp-code" wire:model="otpCode" inputmode="numeric" autocomplete="one-time-code" dir="ltr" maxlength="10" class="input h-12 text-center text-xl font-bold tracking-[0.4em] num" autofocus>
@@ -453,7 +509,7 @@
                 </div>
             </form>
             <x-slot:footer>
-                <button type="button" wire:click="resendApproval" class="btn btn-ghost me-auto text-zinc-600">ارسال دوباره کد</button>
+                <button type="button" wire:click="resendApproval" class="btn btn-ghost me-auto text-accent">ارسال دوباره کد</button>
                 <button type="button" wire:click="closeModal" class="btn">انصراف</button>
                 <button type="submit" form="otp-form" class="btn btn-primary" wire:loading.attr="disabled">تایید و امضا</button>
             </x-slot:footer>
@@ -463,7 +519,7 @@
     @if ($modal === 'reopen' && isset($targetProject) && $targetProject)
         <x-modal title="بازگشایی لیست {{ $targetProject->project->name }}" close="closeModal">
             <form wire:submit="confirmReopen" id="reopen-form">
-                <p class="mb-3 text-sm leading-6 text-zinc-600">لیست به مرحله «در حال تکمیل» برمی‌گردد و تاییدهای قبلی باطل می‌شود (در سابقه می‌ماند).</p>
+                <p class="mb-3 text-sm leading-6 text-ink-soft">لیست به مرحله «در حال تکمیل» برمی‌گردد و تاییدهای قبلی باطل می‌شود (در سابقه می‌ماند).</p>
                 <label for="reopen-reason" class="label">دلیل (اختیاری)</label>
                 <textarea id="reopen-reason" wire:model="reopenReason" rows="2" class="input h-auto py-2 leading-6"></textarea>
             </form>
@@ -477,11 +533,11 @@
     @if ($modal === 'projects' && isset($allProjects))
         <x-modal title="پروژه‌های {{ $sheet->title() }}" close="closeModal">
             <form wire:submit="saveProjects" id="projects-form">
-                <p class="mb-3 text-[13px] leading-6 text-zinc-600">پروژه‌هایی که در این ماه پرسنل دارند. پروژه جدید را از صفحه «پروژه‌ها» تعریف کنید.</p>
+                <p class="mb-3 text-[13px] leading-6 text-ink-soft">پروژه‌هایی که در این ماه پرسنل دارند. پروژه جدید را از صفحه «پروژه‌ها» تعریف کنید.</p>
                 <div class="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto">
                     @foreach ($allProjects as $project)
-                        <label class="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm" wire:key="mp-{{ $project->id }}">
-                            <input type="checkbox" wire:model="monthProjectIds" value="{{ $project->id }}" class="size-4 rounded border-zinc-300">
+                        <label class="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm hover:border-accent/40 has-checked:border-accent/50 has-checked:bg-accent-soft" wire:key="mp-{{ $project->id }}">
+                            <input type="checkbox" wire:model="monthProjectIds" value="{{ $project->id }}" class="size-4 rounded border-zinc-300 accent-accent">
                             {{ $project->name }}
                             @unless ($project->is_active) <span class="text-xs text-zinc-400">(غیرفعال)</span> @endunless
                         </label>
@@ -502,7 +558,7 @@
                 <label for="deadline-input" class="label">تاریخ (شمسی)</label>
                 <input id="deadline-input" wire:model="deadlineInput" class="input num w-48 text-left" dir="ltr" placeholder="1405/07/14" autofocus>
                 @error('deadlineInput') <p class="error">{{ $message }}</p> @enderror
-                <p class="mt-2 text-xs leading-5 text-zinc-500">تا پایان این روز ویرایشگرها و تاییدکننده‌های پروژه می‌توانند مقادیر را تغییر دهند.</p>
+                <p class="hint">تا پایان این روز ویرایشگرها و تاییدکننده‌های پروژه می‌توانند مقادیر را تغییر دهند.</p>
             </form>
             <x-slot:footer>
                 <button type="button" wire:click="closeModal" class="btn">انصراف</button>
@@ -514,18 +570,18 @@
     @if ($modal === 'import')
         <x-modal title="ورود پرسنل از اکسل" close="closeModal">
             @if ($importResult)
-                <div class="rounded-lg bg-emerald-50 px-4 py-3 text-sm leading-7 text-emerald-900">
+                <div class="rounded-xl bg-emerald-50 px-4 py-3 text-sm leading-7 text-emerald-900">
                     {{ Digits::toPersian($importResult['created']) }} ردیف جدید و {{ Digits::toPersian($importResult['updated']) }} ردیف به‌روزرسانی شد.
                     @if ($importResult['columns']) {{ Digits::toPersian($importResult['columns']) }} ستون جدید هم ساخته شد. @endif
                 </div>
             @else
                 <form wire:submit="import" id="import-form" class="space-y-3">
-                    <p class="text-[13px] leading-6 text-zinc-600">
+                    <p class="text-[13px] leading-6 text-ink-soft">
                         سطر اول فایل عنوان ستون‌هاست. لازم: <b>نام</b>، <b>نام خانوادگی</b>، <b>کد ملی</b>. اختیاری: <b>کد پرسنلی</b>، <b>پروژه</b>.
                         ستون‌های دیگر با ستون هم‌نام شیت پر می‌شوند یا ستون تازه می‌سازند. پرسنل موجود (بر اساس کد ملی) به‌روزرسانی می‌شوند.
                     </p>
-                    <input type="file" wire:model="importFile" accept=".xlsx,.csv" class="block w-full text-sm file:me-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-2 file:text-white">
-                    <div wire:loading wire:target="importFile" class="text-xs text-zinc-500">در حال بارگذاری…</div>
+                    <input type="file" wire:model="importFile" accept=".xlsx,.csv" class="block w-full rounded-lg border border-dashed border-line-strong p-3 text-sm file:me-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-2 file:text-white">
+                    <div wire:loading wire:target="importFile" class="text-xs text-ink-soft">در حال بارگذاری…</div>
                     @if ($errors->has('importFile'))
                         <ul class="error list-disc space-y-0.5 ps-5">
                             @foreach ($errors->get('importFile') as $message)

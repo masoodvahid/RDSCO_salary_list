@@ -26,7 +26,7 @@ class PagesTest extends TestCase
         $this->actingAs($this->manager);
 
         $this->get(route('dashboard'))->assertOk()->assertSee('شیت حقوق');
-        $this->get(route('sheets.show', $this->sheet))->assertOk()->assertSee('آرش')->assertSee('بردیا')->assertSee('+ ستون');
+        $this->get(route('sheets.show', $this->sheet))->assertOk()->assertSee('آرش')->assertSee('بردیا')->assertSee('ستون جدید');
         $this->get(route('sheets.create'))->assertOk()->assertSee('شیت ماه جدید');
     }
 
@@ -47,7 +47,7 @@ class PagesTest extends TestCase
             ->assertOk()
             ->assertSee('آرش')
             ->assertDontSee('بردیا')
-            ->assertDontSee('+ ستون');
+            ->assertDontSee('ستون جدید');
 
         $this->actingAs($editor)->get(route('sheets.show', ['sheet' => $this->sheet, 'project' => $this->projectB->id]))
             ->assertOk()

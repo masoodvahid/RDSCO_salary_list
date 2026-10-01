@@ -98,6 +98,11 @@ final class SheetEditor
 
                         continue;
                     }
+                    if (($rangeError = $column->rangeError($value)) !== null) {
+                        $result['errors'][] = $key + ['message' => $rangeError];
+
+                        continue;
+                    }
                 } else {
                     $value = ($raw === null || $raw === '') ? null : mb_substr($raw, 0, 500);
                 }
@@ -303,29 +308,37 @@ final class SheetEditor
         $this->log->record($row->sheet_id, $user, 'row.project', $row->id, null, $old, $new);
     }
 
-    public function addColumn(User $user, Sheet $sheet, string $title, string $type, bool $locked): SheetColumn
+    /** $min / $max: optional bounds for number columns (Persian digits and separators accepted); empty = no limit. */
+    public function addColumn(User $user, Sheet $sheet, string $title, string $type, bool $locked, ?string $min = null, ?string $max = null): SheetColumn
     {
         $this->authorizeManage($user);
         $this->assertNoFinalProjects($sheet);
-        [$title, $type] = $this->validateColumn($sheet, $title, $type);
+        [$title, $type, $min, $max] = $this->validateColumn($sheet, $title, $type, $min, $max);
 
         $column = SheetColumn::create([
             'sheet_id' => $sheet->id,
             'title' => $title,
             'type' => $type,
+            'min_value' => $min,
+            'max_value' => $max,
             'is_locked' => $locked,
             'position' => ((int) SheetColumn::where('sheet_id', $sheet->id)->max('position')) + 1,
         ]);
-        $this->log->record($sheet->id, $user, 'column.create', null, $column->id, null, $title, ['type' => $type, 'locked' => $locked]);
+        $this->log->record($sheet->id, $user, 'column.create', null, $column->id, null, $title, ['type' => $type, 'locked' => $locked, 'min' => $min, 'max' => $max]);
 
         return $column;
     }
 
-    public function updateColumn(User $user, SheetColumn $column, string $title, string $type, bool $locked): void
+    /**
+     * A new range is not applied retroactively: existing values stay, new edits must respect it.
+     *
+     * @return int how many existing values fall outside the column's range after the update
+     */
+    public function updateColumn(User $user, SheetColumn $column, string $title, string $type, bool $locked, ?string $min = null, ?string $max = null): int
     {
         $this->authorizeManage($user);
         $sheet = $column->sheet;
-        [$title, $type] = $this->validateColumn($sheet, $title, $type, $column->id);
+        [$title, $type, $min, $max] = $this->validateColumn($sheet, $title, $type, $min, $max, $column->id);
 
         $changesSignedData = $title !== $column->title || $type !== $column->type->value;
         if ($changesSignedData) {
@@ -340,9 +353,18 @@ final class SheetEditor
             }
         }
 
-        $before = ['title' => $column->title, 'type' => $column->type->value, 'locked' => $column->is_locked];
-        $column->update(['title' => $title, 'type' => $type, 'is_locked' => $locked]);
-        $this->log->record($sheet->id, $user, 'column.update', null, $column->id, json_encode($before, JSON_UNESCAPED_UNICODE), json_encode(['title' => $title, 'type' => $type, 'locked' => $locked], JSON_UNESCAPED_UNICODE));
+        $before = ['title' => $column->title, 'type' => $column->type->value, 'locked' => $column->is_locked, 'min' => $column->min_value, 'max' => $column->max_value];
+        $after = ['title' => $title, 'type' => $type, 'locked' => $locked, 'min' => $min, 'max' => $max];
+        $column->update(['title' => $title, 'type' => $type, 'is_locked' => $locked, 'min_value' => $min, 'max_value' => $max]);
+        $this->log->record($sheet->id, $user, 'column.update', null, $column->id, json_encode($before, JSON_UNESCAPED_UNICODE), json_encode($after, JSON_UNESCAPED_UNICODE));
+
+        if (! $column->hasRange()) {
+            return 0;
+        }
+
+        return SheetCell::where('column_id', $column->id)->whereNotNull('value')->pluck('value')
+            ->filter(fn ($value) => $column->isOutOfRange($value))
+            ->count();
     }
 
     public function deleteColumn(User $user, SheetColumn $column): void
@@ -421,8 +443,8 @@ final class SheetEditor
         $this->log->record($sheet->id, $user, 'sheet.deadline', null, null, $old, $deadline->toDateTimeString());
     }
 
-    /** @return array{0:string,1:string} */
-    private function validateColumn(Sheet $sheet, string $title, string $type, ?int $ignoreId = null): array
+    /** @return array{0:string,1:string,2:string|null,3:string|null} */
+    private function validateColumn(Sheet $sheet, string $title, string $type, ?string $min, ?string $max, ?int $ignoreId = null): array
     {
         $title = trim(preg_replace('/\s+/u', ' ', $title) ?? '');
         $errors = [];
@@ -434,11 +456,25 @@ final class SheetEditor
         if (ColumnType::tryFrom($type) === null) {
             $errors['columnType'] = 'نوع ستون معتبر نیست.';
         }
+
+        // A range only makes sense for numbers; switching to text drops it.
+        $min = $type === ColumnType::Number->value ? Digits::normalizeNumber($min) : null;
+        $max = $type === ColumnType::Number->value ? Digits::normalizeNumber($max) : null;
+        if ($min === false || (is_string($min) && strlen($min) > 40)) {
+            $errors['columnMin'] = 'حداقل را به شکل عدد وارد کنید یا خالی بگذارید.';
+        }
+        if ($max === false || (is_string($max) && strlen($max) > 40)) {
+            $errors['columnMax'] = 'حداکثر را به شکل عدد وارد کنید یا خالی بگذارید.';
+        }
+        if (is_string($min) && is_string($max) && ! isset($errors['columnMin']) && ! isset($errors['columnMax']) && Digits::compare($min, $max) > 0) {
+            $errors['columnMax'] = 'حداکثر نباید از حداقل کمتر باشد.';
+        }
+
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
 
-        return [$title, $type];
+        return [$title, $type, $min, $max];
     }
 
     private function assertNoFinalProjects(Sheet $sheet): void

@@ -58,6 +58,11 @@ class Grid extends Component
 
     public bool $columnLocked = false;
 
+    /** Optional bounds for number columns; empty string = no limit. */
+    public string $columnMin = '';
+
+    public string $columnMax = '';
+
     /** @var array{first_name:string,last_name:string,personnel_code:string,national_code:string,project_id:int|string|null} */
     public array $newRow = ['first_name' => '', 'last_name' => '', 'personnel_code' => '', 'national_code' => '', 'project_id' => null];
 
@@ -259,6 +264,8 @@ class Grid extends Component
             $this->columnTitle = $column->title;
             $this->columnType = $column->type->value;
             $this->columnLocked = $column->is_locked;
+            $this->columnMin = Digits::group($column->min_value);
+            $this->columnMax = Digits::group($column->max_value);
         }
         $this->modal = 'column';
     }
@@ -266,10 +273,12 @@ class Grid extends Component
     public function saveColumn(SheetEditor $editor): void
     {
         if ($this->targetId) {
-            $editor->updateColumn($this->user(), $this->findColumn($this->targetId), $this->columnTitle, $this->columnType, $this->columnLocked);
-            $this->flash('ستون به‌روز شد.');
+            $outside = $editor->updateColumn($this->user(), $this->findColumn($this->targetId), $this->columnTitle, $this->columnType, $this->columnLocked, $this->columnMin, $this->columnMax);
+            $this->flash($outside
+                ? 'ستون به‌روز شد. '.Digits::toPersian($outside).' مقدار فعلی خارج از بازه است و با رنگ قرمز مشخص شده.'
+                : 'ستون به‌روز شد.');
         } else {
-            $editor->addColumn($this->user(), $this->sheet, $this->columnTitle, $this->columnType, $this->columnLocked);
+            $editor->addColumn($this->user(), $this->sheet, $this->columnTitle, $this->columnType, $this->columnLocked, $this->columnMin, $this->columnMax);
             $this->flash('ستون اضافه شد.');
         }
         $this->closeModal();
@@ -366,6 +375,14 @@ class Grid extends Component
         $reviews->addNote($this->user(), $this->findRow((int) $this->targetId), $this->newNote);
         $this->newNote = '';
         $this->refreshData();
+    }
+
+    public function deleteNote(ReviewService $reviews, int $noteId): void
+    {
+        $row = $this->findRow((int) $this->targetId);
+        $reviews->deleteNote($this->user(), Note::where('row_id', $row->id)->findOrFail($noteId));
+        $this->refreshData();
+        $this->flash('یادداشت حذف شد.');
     }
 
     // ---------------------------------------------------------------- workflow
@@ -496,7 +513,7 @@ class Grid extends Component
         $this->modal = null;
         $this->targetId = null;
         $this->otpChallengeId = null;
-        $this->reset(['columnTitle', 'columnType', 'columnLocked', 'rejectNote', 'newNote', 'otpCode', 'importFile', 'importResult', 'deadlineInput', 'reopenReason']);
+        $this->reset(['columnTitle', 'columnType', 'columnLocked', 'columnMin', 'columnMax', 'rejectNote', 'newNote', 'otpCode', 'importFile', 'importResult', 'deadlineInput', 'reopenReason']);
         $this->resetErrorBag();
     }
 
