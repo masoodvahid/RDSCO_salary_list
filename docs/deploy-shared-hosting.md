@@ -29,7 +29,8 @@
 
 ### الف) بسته‌ی آماده را بگیرید
 
-از صفحه‌ی Releases مخزن، فایل `tukahr-X.Y.Z.zip` را دانلود کنید. فایل «Source code (zip)» را نگیرید.
+از صفحه‌ی Releases مخزن `masoodvahid/RDSCO_salary_list`، فایل `tukahr-X.Y.Z.zip` را دانلود کنید. فایل «Source code (zip)» را نگیرید.
+نام بسته به خاطر سازگاری با به‌روزرسان نسخه‌های نصب‌شده، همان `tukahr-` مانده است.
 
 این بسته همه‌چیز را دارد، پس روی هاست به composer یا npm نیازی نیست:
 - `vendor` (بدون پکیج‌های توسعه)
@@ -50,7 +51,7 @@
 فایل `core/.env` را بسازید:
 
 ```dotenv
-APP_NAME=TukaHR
+APP_NAME=RDSCO-Salary
 APP_ENV=production
 APP_KEY=
 APP_DEBUG=false
@@ -80,7 +81,7 @@ KAVENEGAR_APPROVAL_TEMPLATE=tukahr-approval
 KAVENEGAR_SENDER=
 
 TUKA_TEST_ADMIN_ENABLED=false
-TUKA_UPDATE_REPO=masoodvahid/tukahr
+TUKA_UPDATE_REPO=masoodvahid/RDSCO_salary_list
 TUKA_UPDATE_TOKEN=
 ```
 
@@ -159,6 +160,10 @@ php artisan vendor:publish --tag=livewire:assets --force
 - **«بازگرداندن نسخه‌ی قبل»:** دیتابیس از بکاپ و کد از نسخه‌ی کنارگذاشته برمی‌گردد.
 
 صفحه‌ی به‌روزرسانی در حالت تعمیر هم برای مدیر باز است.
+
+**تغییر نام مخزن:** اگر نام مخزن عوض شود، GitHub آدرس قبلی را به آدرس جدید هدایت می‌کند و به‌روزرسانی از کار نمی‌افتد. با این حال `TUKA_UPDATE_REPO` را در `.env` هاست به نام جدید تغییر دهید.
+
+**نام سامانه:** «سامانه مدیریت لیست حقوق» پیش‌فرض است. برای نام دیگر، `TUKA_APP_NAME` را در `.env` تنظیم کنید.
 
 **توکن GitHub:** برای مخزن عمومی لازم نیست. اگر مخزن خصوصی شد، یا GitHub به دلیل اشتراک IP هاست درخواست‌ها را محدود کرد، یک توکن fine-grained فقط با دسترسی خواندن Contents بسازید و در `TUKA_UPDATE_TOKEN` بگذارید.
 

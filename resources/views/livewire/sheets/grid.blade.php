@@ -106,9 +106,9 @@
             </div>
         </div>
 
-        @if (! $modal && ($errors->has('otpCode') || $errors->has('approval') || $errors->has('project') || $errors->has('column')))
+        @if (! $modal && $errors->hasAny(['otpCode', 'approval', 'project', 'column', 'rows']))
             <div class="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-800" role="alert">
-                {{ $errors->first('otpCode') ?: ($errors->first('approval') ?: ($errors->first('project') ?: $errors->first('column'))) }}
+                {{ collect(['otpCode', 'approval', 'project', 'column', 'rows'])->map(fn ($key) => $errors->first($key))->filter()->first() }}
             </div>
         @endif
 
@@ -132,10 +132,19 @@
 
     {{-- ============ Grid ============ --}}
     <div class="flex-1 overflow-auto bg-white" x-ref="grid">
-        <table class="sheet">
+        <table @class(['sheet', 'has-select' => $isManager])>
             <thead>
                 <tr>
-                    <th class="sticky-1 text-center" style="width: 48px">#</th>
+                    @if ($isManager)
+                        <th class="sticky-1" style="width: 72px">
+                            <label class="row-select" title="انتخاب همه‌ی ردیف‌ها (برای انتخاب پشت سر هم: کلیک روی اولی، Shift+کلیک روی آخری)">
+                                <input type="checkbox" x-on:click="toggleAll($event)" x-effect="syncSelectAll($el)" aria-label="انتخاب همه‌ی ردیف‌ها">
+                                <span>#</span>
+                            </label>
+                        </th>
+                    @else
+                        <th class="sticky-1 text-center" style="width: 48px">#</th>
+                    @endif
                     @foreach ($identityFields as $field => [$label, $sticky, $width, $isNum])
                         <th class="{{ $sticky }} px-2" style="width: {{ $width }}px">
                             <span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">
@@ -193,8 +202,19 @@
                         $identityEditable = $access->canEditIdentity($user, $rowSp);
                         $canReviewRow = $access->canReview($user, $rowSp);
                     @endphp
-                    <tr wire:key="row-{{ $row->id }}" data-r="{{ $r }}" @class(['is-rejected' => $row->review_status === ReviewStatus::Rejected])>
-                        <td class="sticky-1 ro text-center text-xs text-ink-soft">{{ Digits::toPersian($loop->iteration) }}</td>
+                    <tr wire:key="row-{{ $row->id }}" data-r="{{ $r }}" data-row-id="{{ $row->id }}" @class(['is-rejected' => $row->review_status === ReviewStatus::Rejected])>
+                        @if ($isManager)
+                            <td class="sticky-1 ro text-xs text-ink-soft">
+                                <label class="row-select" @unless ($identityEditable) title="لیست این پروژه نهایی شده است" @endunless>
+                                    <input type="checkbox" data-select-row="{{ $row->id }}" x-bind:checked="selected[{{ $row->id }}] === true"
+                                           x-on:click="toggleRow($event, {{ $row->id }})" @disabled(! $identityEditable)
+                                           aria-label="انتخاب {{ $row->fullName() }}">
+                                    <span>{{ Digits::toPersian($loop->iteration) }}</span>
+                                </label>
+                            </td>
+                        @else
+                            <td class="sticky-1 ro text-center text-xs text-ink-soft">{{ Digits::toPersian($loop->iteration) }}</td>
+                        @endif
 
                         @foreach ($identityFields as $field => [$label, $sticky, $width, $isNum])
                             @if ($identityEditable)
@@ -319,12 +339,37 @@
         </div>
         <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span class="flex items-center gap-1 text-amber-800">{!! $lockIcon !!} ستون قفل: فقط مدیر ویرایش می‌کند</span>
-            @unless ($isManager)
+            @if ($isManager)
+                <span class="hidden xl:inline">انتخاب چند ردیف پشت سر هم: کلیک روی اولی و Shift+کلیک روی آخری</span>
+            @else
                 <span>افزودن ردیف: فقط مدیر</span>
-            @endunless
+            @endif
             <span class="hidden lg:inline">Enter و کلیدهای جهت برای جابه‌جایی، چسباندن چند خانه از اکسل، کشیدن مربع گوشه خانه برای کپی به خانه‌های پایین (Ctrl+D: کپی از خانه بالا)</span>
         </div>
     </div>
+
+    {{-- ============ Multi-select actions (manager) ============ --}}
+    @if ($isManager)
+        <div x-show="selectedCount > 0" x-cloak class="no-print fixed inset-x-0 bottom-14 z-40 flex justify-center px-4" role="region" aria-label="کارهای ردیف‌های انتخاب‌شده">
+            <div class="flex flex-wrap items-center gap-3 rounded-2xl bg-ink px-4 py-2.5 text-sm text-white shadow-2xl shadow-ink/30">
+                <span><b x-text="toPersian(selectedCount)"></b> ردیف انتخاب شده</span>
+                <span class="h-5 w-px bg-white/20" aria-hidden="true"></span>
+                <label for="bulk-project" class="sr-only">تعیین پروژه برای ردیف‌های انتخاب‌شده</label>
+                <select id="bulk-project" class="h-8 rounded-lg border-0 bg-white/10 px-2 text-[13px] text-white focus:ring-2 focus:ring-white/40"
+                        x-on:change="assignProject($event.target.value); $event.target.value = '__'">
+                    <option value="__" selected disabled class="text-ink">تعیین پروژه…</option>
+                    @foreach ($sheetProjects as $sp)
+                        @if ($sp->stage !== Stage::Final)
+                            <option value="{{ $sp->project_id }}" class="text-ink">{{ $sp->project->name }}</option>
+                        @endif
+                    @endforeach
+                    <option value="" class="text-ink">بدون پروژه</option>
+                </select>
+                <button type="button" class="btn btn-sm border-red-500 bg-red-600 text-white hover:border-red-600 hover:bg-red-700" x-on:click="deleteSelected()">حذف ردیف‌ها</button>
+                <button type="button" class="text-[13px] text-white/70 hover:text-white" x-on:click="clearSelection()">لغو انتخاب</button>
+            </div>
+        </div>
+    @endif
 
     {{-- ============ Notice ============ --}}
     @if ($notice)

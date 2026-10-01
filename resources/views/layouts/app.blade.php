@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="#ffffff">
-    <title>{{ isset($title) ? $title.' · توکا' : 'لیست حقوق توکا' }}</title>
+    <title>{{ isset($title) ? $title.' · '.config('tuka.name') : config('tuka.name') }}</title>
     <script src="{{ asset('js/sheet-grid.js') }}?v={{ @filemtime(public_path('js/sheet-grid.js')) }}"></script>
     <script src="{{ asset('js/updater.js') }}?v={{ @filemtime(public_path('js/updater.js')) }}"></script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])

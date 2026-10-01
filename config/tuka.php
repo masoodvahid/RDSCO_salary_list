@@ -34,6 +34,11 @@ return [
     ],
 
     /*
+    | Name shown in the header, page titles and SMS texts.
+    */
+    'name' => env('TUKA_APP_NAME', 'سامانه مدیریت لیست حقوق'),
+
+    /*
     | Installed version (written into VERSION by the release build; "dev" in a source checkout).
     */
     'version' => trim((string) @file_get_contents(base_path('VERSION'))) ?: 'dev',
@@ -43,7 +48,7 @@ return [
     | or to avoid GitHub's shared rate limit (60 requests/hour per server IP).
     */
     'update' => [
-        'repository' => env('TUKA_UPDATE_REPO', 'masoodvahid/tukahr'),
+        'repository' => env('TUKA_UPDATE_REPO', 'masoodvahid/RDSCO_salary_list'),
         'token' => env('TUKA_UPDATE_TOKEN'),
         'timeout' => (int) env('TUKA_UPDATE_TIMEOUT', 180),
     ],

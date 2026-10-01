@@ -49,7 +49,7 @@ final class InviteService
             return false;
         }
 
-        $message = "{$invitee->name} عزیز، برای ورود به سامانه لیست حقوق توکا از این لینک استفاده کنید:\n{$url}";
+        $message = "{$invitee->name} عزیز، برای ورود به ".config('tuka.name')." از این لینک استفاده کنید:\n{$url}";
 
         try {
             $response = Http::timeout((int) config('services.kavenegar.timeout', 8))

@@ -338,6 +338,26 @@ class Grid extends Component
         $this->flash('ردیف حذف شد.');
     }
 
+    /** Multi-select: delete the chosen rows. Returns true so the grid script can clear the selection. */
+    public function deleteRows(SheetEditor $editor, array $rowIds): bool
+    {
+        $count = $editor->deleteRows($this->user(), $this->sheet, $rowIds);
+        $this->refreshData();
+        $this->flash(Digits::toPersian($count).' ردیف حذف شد.');
+
+        return true;
+    }
+
+    /** Multi-select: give the chosen rows one project ('' = no project). */
+    public function setRowsProject(SheetEditor $editor, array $rowIds, $projectId = null): bool
+    {
+        $count = $editor->setRowsProject($this->user(), $this->sheet, $rowIds, is_numeric($projectId) ? (int) $projectId : null);
+        $this->refreshData();
+        $this->flash('پروژه‌ی '.Digits::toPersian($count).' ردیف تغییر کرد.');
+
+        return true;
+    }
+
     public function setRowProject(SheetEditor $editor, int $rowId, $projectId = null): void
     {
         $editor->setRowProject($this->user(), $this->findRow($rowId), is_numeric($projectId) ? (int) $projectId : null);

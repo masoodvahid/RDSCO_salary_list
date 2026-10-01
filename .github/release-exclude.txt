@@ -28,3 +28,4 @@
 /storage/pail
 /public/hot
 *.zip
+.DS_Store
