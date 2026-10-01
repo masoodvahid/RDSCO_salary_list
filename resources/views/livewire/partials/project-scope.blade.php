@@ -20,19 +20,8 @@
         </div>
 
         @if ($scope !== 'all')
-            <div class="mt-3 flex flex-wrap gap-2" role="group" aria-label="پروژه‌ها">
-                @forelse ($projects as $project)
-                    <label wire:key="{{ $prefix }}-p-{{ $project->id }}"
-                           class="group inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-line-strong bg-white px-3 text-[13px] text-ink transition-colors hover:border-accent/40 has-checked:border-accent has-checked:bg-accent-soft has-checked:font-semibold has-checked:text-accent has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-accent">
-                        <input type="checkbox" wire:model="{{ $idsModel }}" value="{{ $project->id }}" class="sr-only">
-                        <svg class="hidden size-3.5 group-has-checked:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
-                        {{ $project->name }}
-                        @unless ($project->is_active) <span class="text-xs font-normal text-ink-soft">(غیرفعال)</span> @endunless
-                    </label>
-                @empty
-                    <p class="text-[13px] text-ink-soft">هنوز پروژه‌ای تعریف نشده است.</p>
-                @endforelse
-            </div>
+            <x-project-picker class="mt-3" :id="$prefix.'-projects'" multiple :model="$idsModel" placeholder="پروژه‌ها را انتخاب کنید"
+                :options="$projects->map(fn ($p) => ['value' => (string) $p->id, 'label' => $p->name, 'hint' => $p->is_active ? null : 'غیرفعال'])->values()->all()" />
         @endif
         @error($idsModel) <p class="error">{{ $message }}</p> @enderror
     </fieldset>
