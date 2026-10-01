@@ -34,7 +34,7 @@ class UpdaterTest extends TestCase
         $this->web = $this->root.'/public_html';
 
         // The installed (old) application.
-        $this->put($this->core, [
+        $this->writeFiles($this->core, [
             'app/Marker.php' => 'old',
             'bootstrap/app.php' => 'old',
             'config/app.php' => 'old',
@@ -47,7 +47,7 @@ class UpdaterTest extends TestCase
             '.env' => 'APP_KEY=secret',
             'storage/app/keep.txt' => 'data',
         ]);
-        $this->put($this->web, [
+        $this->writeFiles($this->web, [
             'index.php' => 'old index',
             '.htaccess' => 'host rules',
             'build/old.css' => 'old css',
@@ -65,7 +65,7 @@ class UpdaterTest extends TestCase
     }
 
     /** @param array<string, string> $files */
-    private function put(string $base, array $files): void
+    private function writeFiles(string $base, array $files): void
     {
         foreach ($files as $path => $content) {
             @mkdir(dirname("{$base}/{$path}"), 0777, true);
