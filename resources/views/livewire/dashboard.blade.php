@@ -14,6 +14,7 @@
         'sheet.import' => 'فایل اکسل وارد کرد',
         'sheet.import.values' => 'مقادیر را از فایل اکسل وارد کرد',
         'sheet.create' => 'لیست حقوق ماه را ساخت',
+        'sheet.month' => 'ماه لیست را تغییر داد',
     ];
     $activityTone = [
         'stage.approve' => 'bg-stage-final',
@@ -36,6 +37,11 @@
                     @else
                         <span class="chip bg-amber-50 text-amber-800 ring-amber-200">{{ Digits::toPersian($sheet->daysLeft()) }} روز مانده</span>
                     @endif
+                    @if ($me->isManager())
+                        <span class="text-zinc-300" aria-hidden="true">|</span>
+                        <button type="button" wire:click="openMove" class="font-medium text-accent hover:underline">تغییر ماه</button>
+                        <button type="button" wire:click="openDelete" class="font-medium text-red-700 hover:underline">حذف لیست</button>
+                    @endif
                 </div>
             @endif
         </div>
@@ -56,6 +62,13 @@
             @endif
         </div>
     </div>
+
+    @if ($notice)
+        <div class="mt-5 flex items-start justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900" role="status">
+            <span>{{ $notice }}</span>
+            <button type="button" wire:click="dismissNotice" class="shrink-0 text-emerald-800/70 hover:text-emerald-900" aria-label="بستن">×</button>
+        </div>
+    @endif
 
     @if (! $sheet)
         <div class="card mt-8 flex flex-col items-center px-6 py-14 text-center">
@@ -186,5 +199,53 @@
                 </section>
             @endif
         </div>
+    @endif
+    @if ($modal === 'move' && $sheet)
+        <x-modal title="تغییر ماه لیست حقوق {{ $sheet->title() }}" close="closeModal" width="max-w-md">
+            <form wire:submit="saveMove" id="move-form" class="space-y-4">
+                <p class="text-[13px] leading-6 text-ink-soft">همه‌ی نفرات، ستون‌ها، مقادیر و کامنت‌های این لیست به ماه انتخاب‌شده منتقل می‌شوند.</p>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="move-month" class="label">ماه</label>
+                        <select id="move-month" wire:model.live="moveMonth" class="input">
+                            @foreach ($months as $number => $name)
+                                <option value="{{ $number }}">{{ $name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label for="move-year" class="label">سال</label>
+                        <input id="move-year" type="number" wire:model.live.blur="moveYear" min="1400" max="1499" class="input num text-left">
+                    </div>
+                </div>
+                @if ($moveBlocker)
+                    <p class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] leading-6 text-amber-950" role="alert">{{ $moveBlocker }}</p>
+                @endif
+                @error('month') <p class="error">{{ $message }}</p> @enderror
+            </form>
+            <x-slot:footer>
+                <button type="button" wire:click="closeModal" class="btn">انصراف</button>
+                <button type="submit" form="move-form" class="btn btn-primary" @disabled($moveBlocker)>انتقال</button>
+            </x-slot:footer>
+        </x-modal>
+    @endif
+
+    @if ($modal === 'delete' && $sheet)
+        <x-modal title="حذف لیست حقوق {{ $sheet->title() }}" close="closeModal" width="max-w-md">
+            @if ($deleteBlocker)
+                <p class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] leading-6 text-amber-950" role="alert">{{ $deleteBlocker }}</p>
+            @else
+                <p class="text-sm leading-7">این لیست هیچ نفری ندارد. با حذف آن، ستون‌ها، پروژه‌های ماه و سابقه‌ی تغییرات آن هم پاک می‌شود و برگشت‌پذیر نیست.</p>
+            @endif
+            @error('sheet') <p class="error">{{ $message }}</p> @enderror
+            <x-slot:footer>
+                <button type="button" wire:click="closeModal" class="btn">{{ $deleteBlocker ? 'بستن' : 'انصراف' }}</button>
+                @if (! $deleteBlocker)
+                    <button type="button" wire:click="confirmDelete" class="btn btn-danger">حذف لیست</button>
+                @elseif ($blockedByPeople)
+                    <a href="{{ route('sheets.show', $sheet) }}" wire:navigate class="btn btn-primary" data-open-list>باز کردن لیست حقوق</a>
+                @endif
+            </x-slot:footer>
+        </x-modal>
     @endif
 </div>

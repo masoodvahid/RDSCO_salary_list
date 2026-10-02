@@ -94,6 +94,7 @@ final class UserActivity
             'account.updated' => ['bg-stage-hr', $self ? 'اطلاعات حسابش تغییر کرد'.$by : "اطلاعات حساب {$other} را تغییر داد"],
             'account.activated' => ['bg-stage-final', $self ? 'دسترسی‌اش فعال شد'.$by : "دسترسی {$other} را فعال کرد"],
             'account.deactivated' => ['bg-red-500', $self ? 'دسترسی‌اش قطع شد'.$by : "دسترسی {$other} را قطع کرد"],
+            'sheet.deleted' => ['bg-red-500', 'لیست حقوق '.($meta['title'] ?? '').' را حذف کرد'],
             default => ['bg-zinc-300', $log->action],
         };
 
@@ -156,6 +157,7 @@ final class UserActivity
                 'column.reorder' => ['bg-accent', 'ترتیب ستون‌ها را تغییر داد', null],
                 'sheet.create' => ['bg-accent', 'لیست حقوق ماه را ساخت', null],
                 'sheet.projects' => ['bg-accent', 'پروژه‌های ماه را تغییر داد', null],
+                'sheet.month' => ['bg-stage-draft', 'ماه لیست را تغییر داد', $this->pair($log->old_value, $log->new_value)],
                 'sheet.deadline' => ['bg-stage-draft', 'مهلت تکمیل را تغییر داد', $this->pair($this->date($log->old_value), $this->date($log->new_value))],
                 'sheet.import' => ['bg-accent', 'فایل اکسل وارد کرد', Digits::toPersian((int) ($meta['created'] ?? 0)).' ردیف جدید، '.Digits::toPersian((int) ($meta['updated'] ?? 0)).' به‌روزرسانی'],
                 'sheet.import.values' => ['bg-accent', 'مقادیر را از فایل اکسل وارد کرد', Digits::toPersian((int) ($meta['cells'] ?? 0)).' خانه در '.Digits::toPersian((int) ($meta['rows'] ?? 0)).' ردیف'],

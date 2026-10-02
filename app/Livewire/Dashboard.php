@@ -12,6 +12,8 @@ use App\Models\SheetColumn;
 use App\Models\SheetProject;
 use App\Models\SheetRow;
 use App\Services\SheetAccess;
+use App\Services\SheetLifecycle;
+use App\Support\Jalali;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
@@ -21,6 +23,15 @@ class Dashboard extends Component
 {
     #[Url(as: 'sheet')]
     public ?int $sheetId = null;
+
+    /** Open dialog: move | delete (managers). */
+    public ?string $modal = null;
+
+    public $moveYear = 0;
+
+    public $moveMonth = 1;
+
+    public ?string $notice = null;
 
     #[Computed]
     public function sheets()
@@ -97,11 +108,79 @@ class Dashboard extends Component
         }
 
         return ChangeLog::where('sheet_id', $this->sheet->id)
-            ->whereIn('action', ['stage.approve', 'stage.reopen', 'stage.return', 'stage.submit', 'row.review', 'sheet.import', 'sheet.import.values', 'sheet.create'])
+            ->whereIn('action', ['stage.approve', 'stage.reopen', 'stage.return', 'stage.submit', 'row.review', 'sheet.import', 'sheet.import.values', 'sheet.create', 'sheet.month'])
             ->with('user')
             ->latest('id')
             ->limit(12)
             ->get();
+    }
+
+    // ---------------------------------------------------------------- delete / change month (managers)
+
+    public function openMove(): void
+    {
+        $sheet = $this->managedSheet();
+        $this->moveYear = $sheet->jalali_year;
+        $this->moveMonth = $sheet->jalali_month;
+        $this->resetErrorBag();
+        $this->modal = 'move';
+    }
+
+    public function saveMove(SheetLifecycle $lifecycle): void
+    {
+        $sheet = $this->managedSheet();
+        $this->resetErrorBag();
+        $deadlineMoved = $lifecycle->moveTo(auth()->user(), $sheet, (int) $this->moveYear, (int) $this->moveMonth);
+
+        $sheet->refresh();
+        $this->modal = null;
+        $this->refreshSheets();
+        $this->notice = "ماه لیست به {$sheet->title()} تغییر کرد. "
+            .($deadlineMoved ? 'مهلت تکمیل هم به '.Jalali::formatLong($sheet->deadline_at).' منتقل شد.' : 'مهلت تکمیل دستی تعیین شده بود و تغییری نکرد؛ در صورت نیاز آن را اصلاح کنید.');
+    }
+
+    public function openDelete(): void
+    {
+        $this->managedSheet();
+        $this->resetErrorBag();
+        $this->modal = 'delete';
+    }
+
+    public function confirmDelete(SheetLifecycle $lifecycle): void
+    {
+        $sheet = $this->managedSheet();
+        $title = $sheet->title();
+        $lifecycle->delete(auth()->user(), $sheet);
+
+        $this->modal = null;
+        $this->sheetId = null;
+        $this->refreshSheets();
+        $this->notice = "لیست حقوق {$title} حذف شد.";
+    }
+
+    public function closeModal(): void
+    {
+        $this->modal = null;
+        $this->resetErrorBag();
+    }
+
+    public function dismissNotice(): void
+    {
+        $this->notice = null;
+    }
+
+    private function managedSheet(): Sheet
+    {
+        abort_unless(app(SheetAccess::class)->canManage(auth()->user()), 403);
+        $sheet = $this->sheet;
+        abort_unless($sheet, 404);
+
+        return $sheet;
+    }
+
+    private function refreshSheets(): void
+    {
+        unset($this->sheets, $this->sheet, $this->projects, $this->unassigned, $this->activity);
     }
 
     public function stageCounts(): array
@@ -118,7 +197,18 @@ class Dashboard extends Component
     {
         $projectIds = $this->activity->map(fn (ChangeLog $log) => $log->meta['project_id'] ?? null)->filter()->unique();
 
-        return view('livewire.dashboard', [
+        $lifecycle = app(SheetLifecycle::class);
+        $dialog = [];
+        if ($this->modal === 'move' && $this->sheet) {
+            $dialog['moveBlocker'] = $lifecycle->moveBlocker($this->sheet, (int) $this->moveYear, (int) $this->moveMonth);
+            $dialog['months'] = Jalali::monthNames();
+        }
+        if ($this->modal === 'delete' && $this->sheet) {
+            $dialog['deleteBlocker'] = $lifecycle->deleteBlocker($this->sheet);
+            $dialog['blockedByPeople'] = $dialog['deleteBlocker'] !== null && ! $lifecycle->isApproved($this->sheet);
+        }
+
+        return view('livewire.dashboard', $dialog + [
             'stageCounts' => $this->stageCounts(),
             'rejectedStatus' => ReviewStatus::Rejected,
             'projectNames' => $projectIds->isEmpty() ? collect() : Project::whereIn('id', $projectIds)->pluck('name', 'id'),

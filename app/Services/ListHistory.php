@@ -20,7 +20,10 @@ use Illuminate\Validation\ValidationException;
  */
 final class ListHistory
 {
-    private const TIMELINE_ACTIONS = ['sheet.create', 'stage.submit', 'stage.approve', 'stage.reopen', 'stage.return'];
+    private const TIMELINE_ACTIONS = ['sheet.create', 'sheet.month', 'stage.submit', 'stage.approve', 'stage.reopen', 'stage.return'];
+
+    /** Events of the whole list (not of one project) that every project's timeline shows. */
+    private const SHEET_ACTIONS = ['sheet.create', 'sheet.month'];
 
     public function __construct(
         private readonly SheetAccess $access,
@@ -121,7 +124,7 @@ final class ListHistory
         $timelines = [];
         foreach ($sheetProjects as $sp) {
             $timelines[$sp->id] = $logs
-                ->filter(fn (ChangeLog $log) => $log->action === 'sheet.create' || (int) ($log->meta['project_id'] ?? 0) === (int) $sp->project_id)
+                ->filter(fn (ChangeLog $log) => in_array($log->action, self::SHEET_ACTIONS, true) || (int) ($log->meta['project_id'] ?? 0) === (int) $sp->project_id)
                 ->map(fn (ChangeLog $log) => $this->entry($log, $approvals, $hashes[$sp->id] ?? null))
                 ->values()
                 ->all();
@@ -138,6 +141,7 @@ final class ListHistory
 
         [$tone, $text, $detail] = match ($log->action) {
             'sheet.create' => ['bg-zinc-400', 'لیست حقوق ماه را ساخت', null],
+            'sheet.month' => ['bg-zinc-400', 'ماه لیست را تغییر داد', "{$log->old_value} ← {$log->new_value}"],
             'stage.submit' => ['bg-stage-project', 'لیست را برای تایید فرستاد', null],
             'stage.approve' => [$to?->dotClass() ?? 'bg-stage-final', ($to?->actionLabel() ?? 'تایید').' با کد پیامکی',
                 ! empty($meta['skipped']) ? 'بدون تایید مرحله‌ی قبل' : null],
