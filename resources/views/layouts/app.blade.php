@@ -13,7 +13,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
-<body class="min-h-screen bg-canvas font-sans text-ink antialiased">
+<body class="flex min-h-screen flex-col bg-canvas font-sans text-ink antialiased">
     @php
         $me = auth()->user();
         $navItems = [
@@ -66,9 +66,19 @@
         </nav>
     </header>
 
-    <main>
+    <main class="flex-1">
         {{ $slot }}
     </main>
+
+    {{-- The payroll grid fills the screen and shows the version in its own status bar. --}}
+    @unless (request()->routeIs('sheets.show'))
+        <footer class="no-print border-t border-line px-4 py-3 text-xs text-ink-soft sm:px-6">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <span>{{ config('tuka.name') }}</span>
+                <x-app-version />
+            </div>
+        </footer>
+    @endunless
 
     @livewireScripts
 </body>

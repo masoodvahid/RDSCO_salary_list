@@ -6,20 +6,21 @@
     use App\Support\Digits;
     use App\Support\Jalali;
 
-    $identityFields = [
-        'first_name' => ['نام', 'sticky-2', 120, false],
-        'last_name' => ['نام خانوادگی', 'sticky-3', 140, false],
-        'personnel_code' => ['کد پرسنلی', '', 100, true],
-        'national_code' => ['کد ملی', '', 116, true],
-    ];
-    $showReview = $user->isManager() || $user->isGlobalApprover();
-    $gripIcon = '<svg class="size-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
     $plusIcon = '<svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
     $trashIcon = '<svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>';
     $lockIcon = '<svg class="size-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 @endphp
 
-<div class="flex h-[calc(100vh-3.5rem)] flex-col" x-data="sheetGrid(@js($gridConfig))">
+{{-- The x-data expression must stay the same on every render: when it changes, Alpine re-runs the
+     component (state reset, listeners added again). Values that change go in data-* attributes. --}}
+<div class="flex h-[calc(100vh-3.5rem)] flex-col" x-data="sheetGrid({ poll: {{ $gridConfig['poll'] }} })" data-synced-at="{{ $gridConfig['syncedAt'] }}" data-signature="{{ $gridConfig['signature'] }}">
+    {{-- Icon sprite used by the table (referenced with <use>, so each row stays small). --}}
+    <svg width="0" height="0" class="absolute" aria-hidden="true" focusable="false">
+        <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></g></symbol>
+        <symbol id="i-grip" viewBox="0 0 24 24"><g fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></g></symbol>
+        <symbol id="i-note" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+    </svg>
 
     {{-- ============ Toolbar ============ --}}
     <div class="no-print border-b border-line bg-white px-4 py-3 sm:px-6">
@@ -141,200 +142,10 @@
 
     {{-- ============ Grid ============ --}}
     <div class="flex-1 overflow-auto bg-white" x-ref="grid">
-        <table @class(['sheet', 'has-select' => $isManager])>
-            <thead>
-                <tr>
-                    @if ($isManager)
-                        <th class="sticky-1" style="width: 72px">
-                            <label class="row-select" title="انتخاب همه‌ی ردیف‌ها (برای انتخاب پشت سر هم: کلیک روی اولی، Shift+کلیک روی آخری)">
-                                <input type="checkbox" x-on:click="toggleAll($event)" x-effect="syncSelectAll($el)" aria-label="انتخاب همه‌ی ردیف‌ها">
-                                <span>#</span>
-                            </label>
-                        </th>
-                    @else
-                        <th class="sticky-1 text-center" style="width: 48px">#</th>
-                    @endif
-                    @foreach ($identityFields as $field => [$label, $sticky, $width, $isNum])
-                        <th class="{{ $sticky }} px-2" style="width: {{ $width }}px">
-                            <span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">
-                                @unless ($isManager) {!! $lockIcon !!} @endunless {{ $label }}
-                            </span>
-                        </th>
-                    @endforeach
-                    <th class="px-2" style="width: 140px">
-                        <span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">@unless ($isManager) {!! $lockIcon !!} @endunless پروژه</span>
-                    </th>
-                    @foreach ($columns as $column)
-                        @php
-                            $headerHint = collect([
-                                $column->is_locked ? 'ستون قفل: فقط مدیر ویرایش می‌کند' : null,
-                                $column->hasRange() ? 'مقدار مجاز: '.$column->rangeLabel() : null,
-                            ])->filter()->implode(' — ');
-                        @endphp
-                        <th @class(['px-2', 'is-locked' => $column->is_locked]) style="width: {{ $column->type === ColumnType::Text ? 180 : 130 }}px" wire:key="col-{{ $column->id }}" title="{{ $headerHint }}"
-                            data-column-id="{{ $column->id }}"
-                            @if ($column->hasRange())
-                                @if ($column->min_value !== null) data-min="{{ $column->min_value }}" @endif
-                                @if ($column->max_value !== null) data-max="{{ $column->max_value }}" @endif
-                                data-range-message="{{ $column->rangeMessage() }}"
-                            @endif>
-                            <div class="flex items-center justify-between gap-1">
-                                @if ($isManager)
-                                    <span data-col-grip class="col-grip" title="برای جابه‌جایی ستون، بکشید">{!! $gripIcon !!}</span>
-                                @endif
-                                <span class="min-w-0 flex-1 leading-tight">
-                                    <span class="flex items-center gap-1">
-                                        @if ($column->is_locked) {!! $lockIcon !!} @endif
-                                        <span class="truncate">{{ $column->title }}</span>
-                                    </span>
-                                    @if ($column->hasRange())
-                                        <span class="mt-0.5 block truncate text-[10.5px] font-normal opacity-70">{{ $column->rangeLabel() }}</span>
-                                    @endif
-                                </span>
-                                @if ($isManager)
-                                    <button type="button" wire:click="openColumn({{ $column->id }})" class="shrink-0 rounded px-1 text-ink-soft/60 hover:bg-white hover:text-accent" aria-label="تنظیمات ستون {{ $column->title }}">▾</button>
-                                @endif
-                            </div>
-                        </th>
-                    @endforeach
-                    <th class="px-2" style="width: {{ $showReview ? 96 : 104 }}px">بررسی</th>
-                    <th class="px-2 text-center" style="width: {{ $isManager ? 88 : 64 }}px">یادداشت</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                @forelse ($rows as $row)
-                    @php
-                        $r = $loop->index;
-                        $rowSp = $row->project_id ? $sheetProjects->get($row->project_id) : null;
-                        $cells = $row->cells->keyBy('column_id');
-                        $identityEditable = $access->canEditIdentity($user, $rowSp);
-                        $canReviewRow = $access->canReview($user, $rowSp);
-                    @endphp
-                    <tr wire:key="row-{{ $row->id }}" data-r="{{ $r }}" data-row-id="{{ $row->id }}" @class(['is-rejected' => $row->review_status === ReviewStatus::Rejected])>
-                        @if ($isManager)
-                            <td class="sticky-1 ro text-xs text-ink-soft">
-                                <label class="row-select" @unless ($identityEditable) title="لیست این پروژه نهایی شده است" @endunless>
-                                    <input type="checkbox" data-select-row="{{ $row->id }}" x-bind:checked="selected[{{ $row->id }}] === true"
-                                           x-on:click="toggleRow($event, {{ $row->id }})" @disabled(! $identityEditable)
-                                           aria-label="انتخاب {{ $row->fullName() }}">
-                                    <span>{{ Digits::toPersian($loop->iteration) }}</span>
-                                </label>
-                            </td>
-                        @else
-                            <td class="sticky-1 ro text-center text-xs text-ink-soft">{{ Digits::toPersian($loop->iteration) }}</td>
-                        @endif
-
-                        @foreach ($identityFields as $field => [$label, $sticky, $width, $isNum])
-                            @if ($identityEditable)
-                                <td class="{{ $sticky }}">
-                                    <input data-cell data-row="{{ $row->id }}" data-field="{{ $field }}" data-r="{{ $r }}" data-c="{{ $loop->index }}"
-                                           data-saved="{{ $row->{$field} }}" value="{{ $row->{$field} }}" autocomplete="off"
-                                           aria-label="{{ $label }} · ردیف {{ $loop->parent->iteration }}"
-                                           class="cell {{ $isNum ? 'num text-left' : '' }}">
-                                </td>
-                            @else
-                                <td class="ro {{ $sticky }}">
-                                    <span class="cell-text {{ $isNum ? 'num text-left' : '' }}">{{ $row->{$field} }}</span>
-                                </td>
-                            @endif
-                        @endforeach
-
-                        @if ($identityEditable)
-                            <td>
-                                <select class="cell" aria-label="پروژه · {{ $row->fullName() }}" wire:change="setRowProject({{ $row->id }}, $event.target.value)">
-                                    <option value="">— انتخاب پروژه</option>
-                                    @foreach ($sheetProjects as $sp)
-                                        <option value="{{ $sp->project_id }}" @selected((int) $sp->project_id === (int) $row->project_id) @disabled($sp->stage === Stage::Final)>{{ $sp->project->name }}</option>
-                                    @endforeach
-                                </select>
-                            </td>
-                        @else
-                            <td class="ro"><span class="cell-text">{{ $rowSp?->project->name ?? '—' }}</span></td>
-                        @endif
-
-                        @foreach ($columns as $column)
-                            @php
-                                $cell = $cells->get($column->id);
-                                $value = $cell?->value;
-                                $display = $column->isNumber() ? Digits::group($value) : $value;
-                                $outOfRange = $column->isOutOfRange($value);
-                                $cellTitle = $outOfRange ? 'خارج از بازه مجاز ('.$column->rangeLabel().')' : ($column->isNumber() ? '' : $value);
-                            @endphp
-                            @if ($access->canEditCell($user, $sheet, $row, $column, $rowSp))
-                                <td>
-                                    <input data-cell data-row="{{ $row->id }}" data-col="{{ $column->id }}" data-type="{{ $column->type->value }}"
-                                           data-version="{{ $cell?->version ?? 0 }}" data-saved="{{ $value }}" data-r="{{ $r }}" data-c="{{ 4 + $loop->index }}"
-                                           value="{{ $display }}" autocomplete="off" @if ($column->isNumber()) inputmode="decimal" @endif
-                                           aria-label="{{ $column->title }} · {{ $row->fullName() }}" @if ($outOfRange) title="{{ $cellTitle }}" @endif
-                                           @class(['cell', 'num text-left' => $column->isNumber(), 'is-out-of-range' => $outOfRange])>
-                                </td>
-                            @else
-                                <td class="ro">
-                                    <span @class(['cell-text', 'num text-left' => $column->isNumber(), 'is-out-of-range' => $outOfRange]) title="{{ $cellTitle }}">{{ $display }}</span>
-                                </td>
-                            @endif
-                        @endforeach
-
-                        <td class="px-1.5">
-                            @if ($canReviewRow)
-                                <div class="flex items-center gap-1">
-                                    <button type="button" wire:click="approveRow({{ $row->id }})" aria-label="تایید رکورد {{ $row->fullName() }}" aria-pressed="{{ $row->review_status === ReviewStatus::Approved ? 'true' : 'false' }}"
-                                        @class(['flex h-7 w-8 items-center justify-center rounded-md border text-sm font-bold', 'border-emerald-600 bg-emerald-600 text-white' => $row->review_status === ReviewStatus::Approved, 'border-line-strong bg-white text-ink-soft hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700' => $row->review_status !== ReviewStatus::Approved])>✓</button>
-                                    <button type="button" wire:click="openReject({{ $row->id }})" aria-label="رد رکورد {{ $row->fullName() }}"
-                                        @class(['flex h-7 w-8 items-center justify-center rounded-md border text-sm font-bold', 'border-red-600 bg-red-600 text-white' => $row->review_status === ReviewStatus::Rejected, 'border-line-strong bg-white text-ink-soft hover:border-red-300 hover:bg-red-50 hover:text-red-700' => $row->review_status !== ReviewStatus::Rejected])>✕</button>
-                                </div>
-                            @else
-                                <span @class(['cell-text text-xs font-semibold', 'text-emerald-700' => $row->review_status === ReviewStatus::Approved, 'text-red-700' => $row->review_status === ReviewStatus::Rejected, 'font-normal text-ink-soft' => $row->review_status === ReviewStatus::Pending])>{{ $row->review_status->label() }}</span>
-                            @endif
-                        </td>
-
-                        <td class="px-1.5">
-                            <div class="flex items-center justify-center gap-1">
-                                <button type="button" wire:click="openNotes({{ $row->id }})" aria-label="یادداشت‌های {{ $row->fullName() }}"
-                                    @class(['flex h-7 min-w-8 items-center justify-center gap-1 rounded-md px-1.5 text-xs', 'bg-accent-soft font-semibold text-accent' => $row->notes_count, 'text-zinc-400 hover:bg-accent-soft hover:text-accent' => ! $row->notes_count])>
-                                    <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
-                                    @if ($row->notes_count) {{ Digits::toPersian($row->notes_count) }} @endif
-                                </button>
-                                @if ($identityEditable)
-                                    <button type="button" wire:click="deleteRow({{ $row->id }})" wire:confirm="ردیف «{{ $row->fullName() }}» حذف شود؟ این کار در لاگ ثبت می‌شود."
-                                        class="flex size-7 items-center justify-center rounded-md text-zinc-400 hover:bg-red-50 hover:text-red-700" aria-label="حذف ردیف {{ $row->fullName() }}">
-                                        {!! $trashIcon !!}
-                                    </button>
-                                @endif
-                            </div>
-                        </td>
-                    </tr>
-                @empty
-                    <tr>
-                        <td colspan="{{ 8 + $columns->count() }}" class="py-16 text-center text-sm text-ink-soft">
-                            @if ($search !== '' || $reviewFilter !== '')
-                                ردیفی با این فیلتر پیدا نشد.
-                            @elseif ($isManager)
-                                هنوز ردیفی نیست. با «ورود از اکسل» یا «ردیف جدید» پرسنل را اضافه کنید.
-                            @else
-                                پرسنلی برای این پروژه در این ماه ثبت نشده است.
-                            @endif
-                        </td>
-                    </tr>
-                @endforelse
-            </tbody>
-
-            @if ($rows->isNotEmpty())
-                <tfoot>
-                    <tr>
-                        <td class="sticky-1"></td>
-                        <td class="sticky-2"><span class="cell-text">جمع</span></td>
-                        <td class="sticky-3"><span class="cell-text text-xs font-normal text-ink-soft">{{ Digits::toPersian($rows->count()) }} نفر</span></td>
-                        <td></td><td></td><td></td>
-                        @foreach ($columns as $column)
-                            <td><span class="cell-text num text-left">{{ $column->isNumber() ? Digits::group($totals[$column->id] ?? '0') : '' }}</span></td>
-                        @endforeach
-                        <td></td><td></td>
-                    </tr>
-                </tfoot>
-            @endif
-        </table>
+        {{-- The table is an island: actions that do not change it (dialogs, comments…) skip it. See Grid::rendered(). --}}
+        @island(name: 'table')
+            @include('livewire.sheets.partials.table', $this->tableData)
+        @endisland
 
         {{-- ============ Approval timeline and list comments (stays in view when the grid scrolls sideways) ============ --}}
         <section class="no-print sticky right-0 w-full border-t border-line bg-canvas px-4 py-5 sm:px-6" aria-label="روند تایید و کامنت‌های لیست">
@@ -426,6 +237,7 @@
                 <span>افزودن ردیف: فقط مدیر</span>
             @endif
             <span class="hidden lg:inline">Enter و کلیدهای جهت برای جابه‌جایی، چسباندن چند خانه از اکسل، کشیدن مربع گوشه خانه برای کپی به خانه‌های پایین (Ctrl+D: کپی از خانه بالا)</span>
+            <x-app-version class="text-zinc-400" />
         </div>
     </div>
 

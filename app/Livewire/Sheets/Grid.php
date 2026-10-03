@@ -97,6 +97,13 @@ class Grid extends Component
 
     public int $noticeId = 0;
 
+    /**
+     * Set by actions that leave the table as it is (dialogs, comments…): the "table" island is then not
+     * re-rendered, which keeps those actions fast with many people. Every other render refreshes it, and
+     * refreshData() always clears it.
+     */
+    protected bool $keepTable = false;
+
     public function mount(Sheet $sheet): void
     {
         $this->sheetId = $sheet->id;
@@ -197,7 +204,8 @@ class Grid extends Component
 
     private function refreshData(): void
     {
-        unset($this->columns, $this->sheetProjects, $this->visibleProjects, $this->currentSheetProject, $this->rows, $this->sheet);
+        $this->keepTable = false; // data changed: the table island must be rendered again
+        unset($this->columns, $this->sheetProjects, $this->visibleProjects, $this->currentSheetProject, $this->rows, $this->sheet, $this->tableData);
     }
 
     /** Changes when columns, rows, stages, notes or the deadline change (not on plain cell edits). */
@@ -274,8 +282,9 @@ class Grid extends Component
 
     public function openColumn(?int $columnId = null): void
     {
+        $this->keepTable = true;
         $this->authorizeManage();
-        $this->closeModal();
+        $this->resetModal();
 
         if ($columnId) {
             $column = $this->findColumn($columnId);
@@ -300,7 +309,7 @@ class Grid extends Component
             $editor->addColumn($this->user(), $this->sheet, $this->columnTitle, $this->columnType, $this->columnLocked, $this->columnMin, $this->columnMax);
             $this->flash('ستون اضافه شد.');
         }
-        $this->closeModal();
+        $this->resetModal();
         $this->refreshData();
     }
 
@@ -310,7 +319,7 @@ class Grid extends Component
             return;
         }
         $editor->deleteColumn($this->user(), $this->findColumn($this->targetId));
-        $this->closeModal();
+        $this->resetModal();
         $this->refreshData();
         $this->flash('ستون حذف شد.');
     }
@@ -336,8 +345,9 @@ class Grid extends Component
 
     public function openRow(): void
     {
+        $this->keepTable = true;
         $this->authorizeManage();
-        $this->closeModal();
+        $this->resetModal();
         $this->newRow = ['first_name' => '', 'last_name' => '', 'personnel_code' => '', 'national_code' => '', 'project_id' => $this->currentProjectId()];
         $this->modal = 'row';
     }
@@ -345,7 +355,7 @@ class Grid extends Component
     public function saveRow(SheetEditor $editor): void
     {
         $editor->addRow($this->user(), $this->sheet, $this->newRow);
-        $this->closeModal();
+        $this->resetModal();
         $this->refreshData();
         $this->flash('ردیف اضافه شد.');
     }
@@ -395,8 +405,9 @@ class Grid extends Component
 
     public function openReject(int $rowId): void
     {
+        $this->keepTable = true;
         $row = $this->findRow($rowId);
-        $this->closeModal();
+        $this->resetModal();
         $this->targetId = $row->id;
         $this->modal = 'reject';
     }
@@ -404,15 +415,16 @@ class Grid extends Component
     public function confirmReject(ReviewService $reviews): void
     {
         $reviews->review($this->user(), $this->findRow((int) $this->targetId), ReviewStatus::Rejected, $this->rejectNote);
-        $this->closeModal();
+        $this->resetModal();
         $this->refreshData();
         $this->flash('رکورد رد شد و یادداشت برای پروژه ثبت شد.');
     }
 
     public function openNotes(int $rowId): void
     {
+        $this->keepTable = true;
         $row = $this->findRow($rowId);
-        $this->closeModal();
+        $this->resetModal();
         $this->targetId = $row->id;
         $this->modal = 'notes';
     }
@@ -428,6 +440,7 @@ class Grid extends Component
 
     public function addComment(ListHistory $history): void
     {
+        $this->keepTable = true;
         $this->resetErrorBag('commentBody');
         $sheetProject = $this->currentSheetProject;
         abort_unless($sheetProject, 404);
@@ -438,11 +451,13 @@ class Grid extends Component
 
     public function setCommentPrint(ListHistory $history, int $commentId, bool $inPrint): void
     {
+        $this->keepTable = true;
         $history->setCommentPrint($this->user(), $this->findComment($commentId), $inPrint);
     }
 
     public function deleteComment(ListHistory $history, int $commentId): void
     {
+        $this->keepTable = true;
         $history->deleteComment($this->user(), $this->findComment($commentId));
         $this->flash('کامنت حذف شد.');
     }
@@ -473,6 +488,7 @@ class Grid extends Component
 
     public function startApproval(ApprovalService $approvals, int $sheetProjectId): void
     {
+        $this->keepTable = true;
         $sheetProject = $this->findSheetProject($sheetProjectId);
         $this->resetErrorBag();
         $this->otpCode = '';
@@ -485,6 +501,7 @@ class Grid extends Component
 
     public function resendApproval(ApprovalService $approvals): void
     {
+        $this->keepTable = true;
         if ($this->targetId) {
             $this->startApproval($approvals, $this->targetId);
         }
@@ -495,15 +512,16 @@ class Grid extends Component
         $challenge = OtpChallenge::where('user_id', $this->user()->id)->findOrFail((int) $this->otpChallengeId);
         $approval = $approvals->confirm($this->user(), $challenge, $this->otpCode, request()->ip(), request()->userAgent());
 
-        $this->closeModal();
+        $this->resetModal();
         $this->refreshData();
         $this->flash($approval->stage->actionLabel().' ثبت شد.');
     }
 
     public function openReopen(int $sheetProjectId): void
     {
+        $this->keepTable = true;
         $sheetProject = $this->findSheetProject($sheetProjectId);
-        $this->closeModal();
+        $this->resetModal();
         $this->targetId = $sheetProject->id;
         $this->modal = 'reopen';
     }
@@ -511,7 +529,7 @@ class Grid extends Component
     public function confirmReopen(ApprovalService $approvals): void
     {
         $approvals->reopen($this->user(), $this->findSheetProject((int) $this->targetId), trim($this->reopenReason) ?: null);
-        $this->closeModal();
+        $this->resetModal();
         $this->refreshData();
         $this->flash('لیست بازگشایی شد و برای اصلاح به پروژه برگشت.');
     }
@@ -520,8 +538,9 @@ class Grid extends Component
 
     public function openProjects(): void
     {
+        $this->keepTable = true;
         $this->authorizeManage();
-        $this->closeModal();
+        $this->resetModal();
         $this->monthProjectIds = $this->sheetProjects->keys()->map(fn ($id) => (string) $id)->values()->all();
         $this->modal = 'projects';
     }
@@ -529,15 +548,16 @@ class Grid extends Component
     public function saveProjects(SheetEditor $editor): void
     {
         $editor->setMonthProjects($this->user(), $this->sheet, $this->monthProjectIds);
-        $this->closeModal();
+        $this->resetModal();
         $this->refreshData();
         $this->flash('پروژه‌های این ماه به‌روز شد.');
     }
 
     public function openDeadline(): void
     {
+        $this->keepTable = true;
         $this->authorizeManage();
-        $this->closeModal();
+        $this->resetModal();
         $this->deadlineInput = Jalali::formatShort($this->sheet->deadline_at);
         $this->modal = 'deadline';
     }
@@ -551,15 +571,16 @@ class Grid extends Component
             return;
         }
         $editor->setDeadline($this->user(), $this->sheet, Jalali::toCarbon(...$date)->endOfDay());
-        $this->closeModal();
+        $this->resetModal();
         $this->refreshData();
         $this->flash('مهلت تکمیل تغییر کرد.');
     }
 
     public function openImport(PersonnelImporter $importer): void
     {
+        $this->keepTable = true;
         abort_unless($importer->mode($this->user(), $this->sheet) !== null, 403);
-        $this->closeModal();
+        $this->resetModal();
         $this->modal = 'import';
     }
 
@@ -587,6 +608,13 @@ class Grid extends Component
     }
 
     public function closeModal(): void
+    {
+        $this->keepTable = true;
+        $this->resetModal();
+    }
+
+    /** Closes the dialog and clears its fields (actions that change data call this, then refreshData). */
+    private function resetModal(): void
     {
         $this->modal = null;
         $this->targetId = null;
@@ -642,22 +670,51 @@ class Grid extends Component
     /** @return array<int, string> */
     private function totals(Collection $rows, Collection $columns): array
     {
-        $totals = [];
-        foreach ($columns as $column) {
-            if (! $column->isNumber()) {
-                continue;
-            }
-            $sum = '0';
-            foreach ($rows as $row) {
-                $value = $row->cells->firstWhere('column_id', $column->id)?->value;
-                if ($value !== null && Digits::normalizeNumber($value) !== false) {
-                    $sum = Digits::add($sum, $value);
+        $numberColumns = $columns->filter(fn (SheetColumn $c) => $c->isNumber())->pluck('id')->all();
+        $totals = array_fill_keys($numberColumns, '0');
+        foreach ($rows as $row) {
+            foreach ($row->cells as $cell) {
+                if (isset($totals[$cell->column_id]) && $cell->value !== null && Digits::normalizeNumber($cell->value) !== false) {
+                    $totals[$cell->column_id] = Digits::add($totals[$cell->column_id], $cell->value);
                 }
             }
-            $totals[$column->id] = $sum;
         }
 
         return $totals;
+    }
+
+    /** Re-render the table island after every render, unless the action said the table did not change. */
+    public function rendered(): void
+    {
+        if (! $this->keepTable && ! $this->islandIsMounting()) {
+            $this->renderIsland('table');
+        }
+    }
+
+    /**
+     * Everything the table island needs (an island only sees component properties, so it asks for this).
+     * Computed, so it cannot be called from the browser.
+     */
+    #[Computed]
+    public function tableData(): array
+    {
+        $user = $this->user();
+        $access = $this->access();
+        $rows = $this->rows;
+        $columns = $this->columns;
+
+        return [
+            'user' => $user,
+            'access' => $access,
+            'sheet' => $this->sheet,
+            'rows' => $rows,
+            'columns' => $columns,
+            'sheetProjects' => $this->sheetProjects,
+            'isManager' => $access->canManage($user),
+            'showReview' => $user->isManager() || $user->isGlobalApprover(),
+            'totals' => $this->totals($rows, $columns),
+            'now' => now(),
+        ];
     }
 
     public function render()
@@ -666,8 +723,6 @@ class Grid extends Component
         $access = $this->access();
         $sheet = $this->sheet;
         $current = $this->currentSheetProject;
-        $rows = $this->rows;
-        $columns = $this->columns;
 
         $approvals = collect();
         $currentHash = null;
@@ -709,8 +764,7 @@ class Grid extends Component
             'user' => $user,
             'access' => $access,
             'sheet' => $sheet,
-            'rows' => $rows,
-            'columns' => $columns,
+            'columns' => $this->columns,
             'sheetProjects' => $this->sheetProjects,
             'isManager' => $access->canManage($user),
             'importMode' => app(PersonnelImporter::class)->mode($user, $sheet),
@@ -723,7 +777,6 @@ class Grid extends Component
             'timeline' => $timeline,
             'listComments' => $listComments,
             'canComment' => $current !== null && $access->canComment($user, $current),
-            'totals' => $this->totals($rows, $columns),
             'unassignedCount' => $access->canManage($user) ? SheetRow::where('sheet_id', $this->sheetId)->whereNull('project_id')->count() : 0,
             'gridConfig' => [
                 'poll' => 12,
