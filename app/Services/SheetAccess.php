@@ -80,6 +80,16 @@ final class SheetAccess
 
     public function canEditCell(User $user, Sheet $sheet, SheetRow $row, SheetColumn $column, ?SheetProject $sheetProject, ?CarbonInterface $now = null): bool
     {
+        return $this->canEditRowCells($user, $sheet, $row, $sheetProject, $now)
+            && ($user->role === Role::Manager || ! $column->is_locked);
+    }
+
+    /**
+     * Whether the user may edit the row's cells right now, before looking at column locks (managers may
+     * also edit locked columns). canEditCell() = this + the lock; the grid checks it once per row.
+     */
+    public function canEditRowCells(User $user, Sheet $sheet, SheetRow $row, ?SheetProject $sheetProject, ?CarbonInterface $now = null): bool
+    {
         if (! $user->is_active) {
             return false;
         }
@@ -95,7 +105,6 @@ final class SheetAccess
         }
 
         return $this->isMemberOf($user, $row->project_id === null ? null : (int) $row->project_id)
-            && ! $column->is_locked
             && $stage === Stage::Draft
             && ! $sheet->isPastDeadline($now);
     }

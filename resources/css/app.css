@@ -97,6 +97,31 @@
     .page-lead {
         @apply mt-1.5 max-w-2xl text-sm leading-6 text-ink-soft;
     }
+    /* Row buttons of the payroll table (short class names: they repeat on every row). */
+    .review-btn {
+        @apply flex h-7 w-8 items-center justify-center rounded-md border border-line-strong bg-white text-sm font-bold text-ink-soft;
+    }
+    .review-btn.is-approve:hover {
+        @apply border-emerald-300 bg-emerald-50 text-emerald-700;
+    }
+    .review-btn.is-reject:hover {
+        @apply border-red-300 bg-red-50 text-red-700;
+    }
+    .review-btn.is-approve.is-on {
+        @apply border-emerald-600 bg-emerald-600 text-white;
+    }
+    .review-btn.is-reject.is-on {
+        @apply border-red-600 bg-red-600 text-white;
+    }
+    .note-btn {
+        @apply flex h-7 min-w-8 items-center justify-center gap-1 rounded-md px-1.5 text-xs text-zinc-400 hover:bg-accent-soft hover:text-accent;
+    }
+    .note-btn.has-notes {
+        @apply bg-accent-soft font-semibold text-accent;
+    }
+    .row-del {
+        @apply flex size-7 items-center justify-center rounded-md text-zinc-400 hover:bg-red-50 hover:text-red-700;
+    }
     .num {
         direction: ltr;
         unicode-bidi: plaintext;

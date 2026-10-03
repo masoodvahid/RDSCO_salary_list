@@ -13,7 +13,16 @@
  * - Managers select rows (Shift+click for a run of rows) to delete them or set their project.
  * - Number cells show thousands separators; raw value while editing.
  * - Pulls other users' edits every few seconds via $wire.changesSince.
+ * - On a re-render, rows whose HTML did not change (same data-hash) are not morphed at all.
  */
+document.addEventListener('livewire:init', () => {
+    // Morphing a big table costs far more than the change itself; a row with the same hash as the
+    // server's new HTML is identical, so skip it (and keep its client state: errors, pending edits).
+    window.Livewire.hook('morph.updating', ({ el, toEl, skip }) => {
+        if (el.tagName === 'TR' && el.dataset.hash && el.dataset.hash === toEl.dataset?.hash) skip();
+    });
+});
+
 document.addEventListener('alpine:init', () => {
     window.Alpine.data('sheetGrid', (options = {}) => ({
         status: 'saved', // saved | dirty | saving | error
@@ -22,8 +31,10 @@ document.addEventListener('alpine:init', () => {
         saving: false,
         timer: null,
         pollTimer: null,
-        lastSync: options.syncedAt || null,
-        signature: options.signature || null,
+        // Seeded from data-synced-at / data-signature on the root (not from options: the x-data
+        // expression has to stay the same across renders, or Alpine re-runs the whole component).
+        lastSync: null,
+        signature: null,
         info: '',
         infoTimer: null,
         handle: null,
@@ -35,6 +46,8 @@ document.addEventListener('alpine:init', () => {
 
         init() {
             const root = this.$refs.grid || this.$el;
+            this.lastSync = this.$el.dataset.syncedAt || options.syncedAt || null;
+            this.signature = this.$el.dataset.signature || options.signature || null;
             root.addEventListener('focusin', (e) => this.isCell(e.target) && this.onFocus(e.target));
             root.addEventListener('focusout', (e) => this.isCell(e.target) && this.onBlur(e.target));
             this.createHandle();
@@ -44,7 +57,9 @@ document.addEventListener('alpine:init', () => {
                 if (grip) this.startColumnDrag(e, grip);
             });
             // A Livewire re-render drops the handle (it is not in the server HTML); put it back.
-            window.Livewire?.hook?.('commit', ({ succeed }) => succeed(() => requestAnimationFrame(() => {
+            // It also brings the current structure signature, so the next poll does not refresh again.
+            this._unhookCommit = window.Livewire?.hook?.('commit', ({ succeed }) => succeed(() => requestAnimationFrame(() => {
+                if (this.$el.isConnected && this.$el.dataset.signature) this.signature = this.$el.dataset.signature;
                 if (this.$el.isConnected) this.pruneSelection();
                 const active = document.activeElement;
                 if (this.$el.isConnected && !this.fill && this.isFillable(active)) this.placeHandle(active);
@@ -52,6 +67,14 @@ document.addEventListener('alpine:init', () => {
                     this.showError(active, active.title);
                 }
             })));
+            // A row's project <select> ships with only its current option; fill it on first use.
+            const fillProjects = (e) => {
+                const select = e.target.closest && e.target.closest('select[data-project-select]');
+                if (select) this.fillProjectSelect(select);
+            };
+            root.addEventListener('mousedown', fillProjects, true);
+            root.addEventListener('focusin', fillProjects);
+            root.addEventListener('touchstart', fillProjects, { capture: true, passive: true });
             root.addEventListener('change', (e) => this.isCell(e.target) && this.queue(e.target));
             root.addEventListener('keydown', (e) => this.onKey(e));
             root.addEventListener('paste', (e) => this.onPaste(e));
@@ -69,12 +92,23 @@ document.addEventListener('alpine:init', () => {
         },
 
         destroy() {
+            this._unhookCommit?.();
             clearInterval(this.pollTimer);
             window.removeEventListener('beforeunload', this._beforeUnload);
             this.cancelFill();
             this.cancelColumnDrag();
             this.handle?.remove();
             this.bubble?.remove();
+        },
+
+        fillProjectSelect(select) {
+            if (select.dataset.filled) return;
+            const options = document.getElementById('project-options');
+            if (!options) return;
+            const value = select.dataset.value || '';
+            select.innerHTML = options.innerHTML;
+            select.value = value;
+            select.dataset.filled = '1';
         },
 
         isCell(el) {

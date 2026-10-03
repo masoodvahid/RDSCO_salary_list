@@ -44,6 +44,12 @@ return [
     'version' => trim((string) @file_get_contents(base_path('VERSION'))) ?: 'dev',
 
     /*
+    | Gzip HTML/JSON responses when the web server does not (see CompressResponse). Turn off only if
+    | the host mangles compressed responses.
+    */
+    'gzip' => (bool) env('TUKA_GZIP', true),
+
+    /*
     | In-app updates from GitHub Releases. A token is only needed for a private repository
     | or to avoid GitHub's shared rate limit (60 requests/hour per server IP).
     */

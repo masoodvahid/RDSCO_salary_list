@@ -62,17 +62,40 @@ class PagesTest extends TestCase
 
     public function test_grid_actions_for_managers(): void
     {
-        Livewire::actingAs($this->manager)
+        $grid = Livewire::actingAs($this->manager)
             ->test(Grid::class, ['sheet' => $this->sheet])
             ->call('openColumn')
             ->set('columnTitle', 'پاداش')
             ->set('columnType', 'number')
             ->call('saveColumn')
-            ->assertHasNoErrors()
-            ->assertSee('پاداش')
-            ->call('filterProject', $this->projectA->id)
-            ->assertSee('آرش')
-            ->assertDontSee('بردیا');
+            ->assertHasNoErrors();
+        // After the first render the table travels as the "table" island.
+        $this->assertStringContainsString('پاداش', $this->gridTable($grid));
+
+        $grid->call('filterProject', $this->projectA->id);
+        $this->assertStringContainsString('آرش', $this->gridTable($grid));
+        $this->assertStringNotContainsString('بردیا', $this->gridTable($grid));
+    }
+
+    public function test_version_in_the_footer_and_list_actions_as_icon_buttons(): void
+    {
+        config(['tuka.version' => '1.5.0']);
+        $this->actingAs($this->manager);
+
+        $this->get(route('dashboard'))->assertOk()
+            ->assertSee('<footer', false)
+            ->assertSeeInOrder(['نسخه‌ی', '1.5.0'])
+            ->assertSee('href="'.route('system.update').'"', false)
+            ->assertSee('aria-label="تغییر ماه لیست حقوق شهریور ۱۴۰۵"', false)
+            ->assertSee('aria-label="حذف لیست حقوق شهریور ۱۴۰۵"', false);
+        // The grid fills the screen: the version sits in its status bar instead of a page footer.
+        $this->get(route('sheets.show', $this->sheet))->assertOk()->assertDontSee('<footer', false)->assertSee('1.5.0');
+
+        config(['tuka.version' => 'dev']);
+        $editor = User::factory()->editor($this->projectA)->create();
+        $this->actingAs($editor)->get(route('dashboard'))->assertOk()
+            ->assertSee('نسخه‌ی توسعه')
+            ->assertDontSee('حذف لیست حقوق');
     }
 
     public function test_export_and_print(): void

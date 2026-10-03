@@ -37,11 +37,6 @@
                     @else
                         <span class="chip bg-amber-50 text-amber-800 ring-amber-200">{{ Digits::toPersian($sheet->daysLeft()) }} روز مانده</span>
                     @endif
-                    @if ($me->isManager())
-                        <span class="text-zinc-300" aria-hidden="true">|</span>
-                        <button type="button" wire:click="openMove" class="font-medium text-accent hover:underline">تغییر ماه</button>
-                        <button type="button" wire:click="openDelete" class="font-medium text-red-700 hover:underline">حذف لیست</button>
-                    @endif
                 </div>
             @endif
         </div>
@@ -59,6 +54,16 @@
             @endif
             @if ($me->isManager())
                 <a href="{{ route('sheets.create') }}" wire:navigate class="btn btn-primary">لیست حقوق ماه جدید</a>
+                @if ($sheet)
+                    <div class="flex items-center gap-1.5">
+                        <button type="button" wire:click="openMove" class="btn size-9 px-0 text-ink-soft hover:text-accent" title="تغییر ماه لیست" aria-label="تغییر ماه لیست حقوق {{ $sheet->title() }}">
+                            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M8 14h8l-2-2M16 17.5H8l2 2"/></svg>
+                        </button>
+                        <button type="button" wire:click="openDelete" class="btn size-9 px-0 text-red-700 hover:border-red-300 hover:bg-red-50" title="حذف لیست" aria-label="حذف لیست حقوق {{ $sheet->title() }}">
+                            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>
+                        </button>
+                    </div>
+                @endif
             @endif
         </div>
     </div>
