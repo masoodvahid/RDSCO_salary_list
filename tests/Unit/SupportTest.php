@@ -51,6 +51,26 @@ class SupportTest extends TestCase
         $this->assertSame('300000000.5', Digits::add('150000000.25', '150000000.25'));
     }
 
+    public function test_sums_match_chained_adds(): void
+    {
+        $values = ['150000000', '-25000000', null, '', '12.5', 'abc', '۱۲٬۰۰۰', '0.25', '999999999999999', '1234567890123456789'];
+        $chained = '0';
+        foreach ($values as $value) {
+            $number = Digits::normalizeNumber($value);
+            if (is_string($number)) {
+                $chained = Digits::add($chained, $number);
+            }
+        }
+
+        $this->assertSame($chained, Digits::sum($values));
+        $this->assertSame('0', Digits::sum([]));
+        $this->assertSame('-5', Digits::sum(['-2', '-3']));
+        if (function_exists('bcadd')) {
+            // Many large integers: the native path hands over to exact addition before it could overflow.
+            $this->assertSame('99999999999999900000', Digits::sum(array_fill(0, 100000, '999999999999999')));
+        }
+    }
+
     public function test_numbers_compare_exactly(): void
     {
         $this->assertSame(1, Digits::compare('10', '9'));

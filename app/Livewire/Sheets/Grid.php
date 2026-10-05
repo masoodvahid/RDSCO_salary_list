@@ -4,6 +4,7 @@ namespace App\Livewire\Sheets;
 
 use App\Enums\ReviewStatus;
 use App\Enums\Stage;
+use App\Models\ChangeLog;
 use App\Models\ListComment;
 use App\Models\Note;
 use App\Models\OtpChallenge;
@@ -23,6 +24,7 @@ use App\Services\SheetEditor;
 use App\Support\Digits;
 use App\Support\Jalali;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
@@ -171,12 +173,10 @@ class Grid extends Component
         return $id ? $this->sheetProjects->get($id) : null;
     }
 
-    #[Computed]
-    public function rows(): Collection
+    /** The people the grid shows with the current filters, in grid order. */
+    private function rowsQuery(): Builder
     {
         $query = $this->access()->visibleRows($this->user(), $this->sheet, $this->currentProjectId())
-            ->with('cells')
-            ->withCount('notes')
             ->orderBy('position')
             ->orderBy('id');
 
@@ -199,23 +199,60 @@ class Grid extends Component
             $query->where('review_status', $this->reviewFilter);
         }
 
-        return $query->get();
+        return $query;
+    }
+
+    #[Computed]
+    public function rows(): Collection
+    {
+        return $this->rowsQuery()->withCount('notes')->get();
+    }
+
+    /** Values of the shown rows (see cellValuesFor). */
+    #[Computed]
+    public function cellValues(): array
+    {
+        return $this->cellValuesFor($this->rows->pluck('id')->all());
+    }
+
+    /**
+     * row id => column id => [value, version], read as plain arrays: hydrating thousands of cell models
+     * was a large part of rendering a big list.
+     *
+     * @param  list<int>  $rowIds
+     * @return array<int, array<int, array{0: ?string, 1: int}>>
+     */
+    private function cellValuesFor(array $rowIds): array
+    {
+        $values = [];
+        foreach (array_chunk($rowIds, 1000) as $chunk) {
+            $cells = SheetCell::query()->toBase()->whereIn('row_id', $chunk)->get(['row_id', 'column_id', 'value', 'version']);
+            foreach ($cells as $cell) {
+                $values[(int) $cell->row_id][(int) $cell->column_id] = [$cell->value, (int) $cell->version];
+            }
+        }
+
+        return $values;
     }
 
     private function refreshData(): void
     {
         $this->keepTable = false; // data changed: the table island must be rendered again
-        unset($this->columns, $this->sheetProjects, $this->visibleProjects, $this->currentSheetProject, $this->rows, $this->sheet, $this->tableData);
+        unset($this->columns, $this->sheetProjects, $this->visibleProjects, $this->currentSheetProject, $this->rows, $this->cellValues, $this->sheet, $this->tableData);
     }
 
-    /** Changes when columns, rows, stages, notes or the deadline change (not on plain cell edits). */
+    /**
+     * Changes when open grids need the whole table again: columns, which rows this view shows (and their
+     * order), stages, comments, the deadline. Changes inside rows (values, reviews, names, project, notes)
+     * travel through changesSince as cell values and row patches, so reviewing records one by one does not
+     * make every open grid reload a big table.
+     */
     public function structureSignature(): string
     {
         $parts = [
             SheetColumn::where('sheet_id', $this->sheetId)->selectRaw('count(*) as c, max(updated_at) as u')->first()?->toArray(),
-            SheetRow::where('sheet_id', $this->sheetId)->selectRaw('count(*) as c, max(updated_at) as u')->first()?->toArray(),
+            md5(implode(',', $this->rowsQuery()->pluck('id')->all())),
             SheetProject::where('sheet_id', $this->sheetId)->selectRaw('count(*) as c, max(updated_at) as u')->first()?->toArray(),
-            Note::where('sheet_id', $this->sheetId)->count(),
             ListComment::whereIn('sheet_project_id', SheetProject::where('sheet_id', $this->sheetId)->select('id'))
                 ->selectRaw('count(*) as c, max(updated_at) as u')->first()?->toArray(),
             $this->sheet->deadline_at?->timestamp,
@@ -254,7 +291,21 @@ class Grid extends Component
             ->values()
             ->all();
 
-        return ['now' => $now->toIso8601String(), 'cells' => $cells, 'signature' => $this->structureSignature()];
+        // Rows changed by others (review, names, project…), unless the client reloads the table anyway.
+        $current = $this->structureSignature();
+        $rows = [];
+        if ($current === $signature) {
+            $changed = $this->rowsQuery()
+                ->where(fn ($q) => $q->where('updated_at', '>=', $from)->orWhereIn('id', ChangeLog::where('sheet_id', $this->sheetId)
+                    ->where('created_at', '>=', $from)
+                    ->whereIn('action', ['note.create', 'note.delete']) // notes do not touch the row itself
+                    ->select('row_id')))
+                ->pluck('id')
+                ->all();
+            $rows = $changed === [] ? [] : ($this->rowsHtml($changed) ?? []);
+        }
+
+        return ['now' => $now->toIso8601String(), 'cells' => $cells, 'rows' => $rows, 'signature' => $current];
     }
 
     // ---------------------------------------------------------------- filters
@@ -390,7 +441,7 @@ class Grid extends Component
     public function setRowProject(SheetEditor $editor, int $rowId, $projectId = null): void
     {
         $editor->setRowProject($this->user(), $this->findRow($rowId), is_numeric($projectId) ? (int) $projectId : null);
-        $this->refreshData();
+        $this->patchRows([$rowId]);
     }
 
     // ---------------------------------------------------------------- review & notes
@@ -400,7 +451,7 @@ class Grid extends Component
         $row = $this->findRow($rowId);
         $status = $row->review_status === ReviewStatus::Approved ? ReviewStatus::Pending : ReviewStatus::Approved;
         $reviews->review($this->user(), $row, $status);
-        $this->refreshData();
+        $this->patchRows([$row->id]);
     }
 
     public function openReject(int $rowId): void
@@ -414,9 +465,12 @@ class Grid extends Component
 
     public function confirmReject(ReviewService $reviews): void
     {
-        $reviews->review($this->user(), $this->findRow((int) $this->targetId), ReviewStatus::Rejected, $this->rejectNote);
+        $row = $this->findRow((int) $this->targetId);
+        $stage = $this->stageOf($row);
+        $reviews->review($this->user(), $row, ReviewStatus::Rejected, $this->rejectNote);
         $this->resetModal();
-        $this->refreshData();
+        // A rejection can send the whole list back a stage, which changes what everyone may edit.
+        $this->stageOf($row) === $stage ? $this->patchRows([$row->id]) : $this->refreshData();
         $this->flash('رکورد رد شد و یادداشت برای پروژه ثبت شد.');
     }
 
@@ -431,9 +485,10 @@ class Grid extends Component
 
     public function addNote(ReviewService $reviews): void
     {
-        $reviews->addNote($this->user(), $this->findRow((int) $this->targetId), $this->newNote);
+        $row = $this->findRow((int) $this->targetId);
+        $reviews->addNote($this->user(), $row, $this->newNote);
         $this->newNote = '';
-        $this->refreshData();
+        $this->patchRows([$row->id]);
     }
 
     // ---------------------------------------------------------------- list comments
@@ -473,7 +528,7 @@ class Grid extends Component
     {
         $row = $this->findRow((int) $this->targetId);
         $reviews->deleteNote($this->user(), Note::where('row_id', $row->id)->findOrFail($noteId));
-        $this->refreshData();
+        $this->patchRows([$row->id]);
         $this->flash('یادداشت حذف شد.');
     }
 
@@ -667,20 +722,88 @@ class Grid extends Component
         return $sheetProject;
     }
 
-    /** @return array<int, string> */
-    private function totals(Collection $rows, Collection $columns): array
+    /**
+     * Column totals of the shown rows.
+     *
+     * @param  array<int, array<int, array{0: ?string, 1: int}>>  $cells
+     * @return array<int, string>
+     */
+    private function totals(array $cells, Collection $columns): array
     {
-        $numberColumns = $columns->filter(fn (SheetColumn $c) => $c->isNumber())->pluck('id')->all();
-        $totals = array_fill_keys($numberColumns, '0');
-        foreach ($rows as $row) {
-            foreach ($row->cells as $cell) {
-                if (isset($totals[$cell->column_id]) && $cell->value !== null && Digits::normalizeNumber($cell->value) !== false) {
-                    $totals[$cell->column_id] = Digits::add($totals[$cell->column_id], $cell->value);
+        $values = array_fill_keys($columns->filter(fn (SheetColumn $c) => $c->isNumber())->pluck('id')->all(), []);
+        foreach ($cells as $rowCells) {
+            foreach ($rowCells as $columnId => [$value]) {
+                if (isset($values[$columnId]) && $value !== null) {
+                    $values[$columnId][] = $value;
                 }
             }
         }
 
-        return $totals;
+        return array_map(fn (array $list) => Digits::sum($list), $values);
+    }
+
+    /** @param  array<int, array<int, array{0: ?string, 1: int}>>  $cells */
+    private function gridRows(array $cells): GridRows
+    {
+        $user = $this->user();
+        $access = $this->access();
+
+        return new GridRows($user, $access, $this->sheet, $this->columns, $this->sheetProjects, $cells, $access->canManage($user), now());
+    }
+
+    /**
+     * Sends fresh HTML for just these rows (applied by sheet-grid.js) instead of re-rendering the table,
+     * which with hundreds of people is a megabyte of HTML. Falls back to the full table when a row is no
+     * longer in the current view (filtered out, deleted meanwhile).
+     *
+     * @param  list<int>  $rowIds
+     */
+    private function patchRows(array $rowIds): void
+    {
+        $html = $this->rowsHtml($rowIds);
+        if ($html === null) {
+            $this->refreshData();
+
+            return;
+        }
+
+        $this->keepTable = true;
+        $this->dispatch('grid-rows', rows: $html);
+    }
+
+    /**
+     * row id => row HTML at its place in the current view, or null when one of them is not in the view.
+     *
+     * @param  list<int>  $rowIds
+     * @return array<int, string>|null
+     */
+    private function rowsHtml(array $rowIds): ?array
+    {
+        $rowIds = array_values(array_unique(array_map('intval', $rowIds)));
+        $positions = array_flip($this->rowsQuery()->pluck('id')->all());
+        $rows = SheetRow::where('sheet_id', $this->sheetId)->whereIn('id', $rowIds)->withCount('notes')->get();
+
+        if ($rows->count() !== count($rowIds) || $rows->contains(fn (SheetRow $row) => ! isset($positions[$row->id]))) {
+            return null;
+        }
+
+        $renderer = $this->gridRows($this->cellValuesFor($rowIds));
+        $html = [];
+        foreach ($rows as $row) {
+            $html[$row->id] = $renderer->row($row, $positions[$row->id]);
+        }
+
+        return $html;
+    }
+
+    private function stageOf(SheetRow $row): ?int
+    {
+        if (! $row->project_id) {
+            return null;
+        }
+        $stage = SheetProject::where('sheet_id', $this->sheetId)->where('project_id', $row->project_id)->toBase()->value('stage');
+
+        return $stage === null ? null : (int) $stage;
     }
 
     /** Re-render the table island after every render, unless the action said the table did not change. */
@@ -699,21 +822,17 @@ class Grid extends Component
     public function tableData(): array
     {
         $user = $this->user();
-        $access = $this->access();
-        $rows = $this->rows;
         $columns = $this->columns;
+        $cells = $this->cellValues;
 
         return [
-            'user' => $user,
-            'access' => $access,
-            'sheet' => $this->sheet,
-            'rows' => $rows,
+            'rows' => $this->rows,
+            'renderer' => $this->gridRows($cells),
             'columns' => $columns,
             'sheetProjects' => $this->sheetProjects,
-            'isManager' => $access->canManage($user),
+            'isManager' => $this->access()->canManage($user),
             'showReview' => $user->isManager() || $user->isGlobalApprover(),
-            'totals' => $this->totals($rows, $columns),
-            'now' => now(),
+            'totals' => $this->totals($cells, $columns),
         ];
     }
 

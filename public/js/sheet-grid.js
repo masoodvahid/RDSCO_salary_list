@@ -13,7 +13,13 @@
  * - Managers select rows (Shift+click for a run of rows) to delete them or set their project.
  * - Number cells show thousands separators; raw value while editing.
  * - Pulls other users' edits every few seconds via $wire.changesSince.
- * - On a re-render, rows whose HTML did not change (same data-hash) are not morphed at all.
+ * - On a re-render, rows whose HTML did not change (same data-hash) are not morphed at all; actions on
+ *   one person (approve, notes, project) only send that row ('grid-rows', see Grid::patchRows).
+ * - Big lists: only the rows near the viewport are rendered (the rest stay in the DOM with .v-off), so
+ *   typing, hovering and scrolling cost the same with 50 or 1000 people. Ctrl+F goes to the grid search,
+ *   which searches every row (pressed again, it opens the browser's own search).
+ * - Rows carry no Alpine directives (their <tbody> is x-ignore'd): their buttons, selection checkboxes
+ *   and project <select> are handled here by event delegation.
  */
 document.addEventListener('livewire:init', () => {
     // Morphing a big table costs far more than the change itself; a row with the same hash as the
@@ -43,6 +49,7 @@ document.addEventListener('alpine:init', () => {
         colDrag: null, // active column drag: { grip, th, id, target, before, pointer, moved }
         selected: {}, // row id → true (manager multi-select)
         lastSelected: null, // anchor row for Shift+click
+        win: null, // rendered rows window: { rows, top, bottom, start, end, rowH, bodyTop, scrollTop, viewH }
 
         init() {
             const root = this.$refs.grid || this.$el;
@@ -78,6 +85,16 @@ document.addEventListener('alpine:init', () => {
             root.addEventListener('change', (e) => this.isCell(e.target) && this.queue(e.target));
             root.addEventListener('keydown', (e) => this.onKey(e));
             root.addEventListener('paste', (e) => this.onPaste(e));
+            root.addEventListener('click', (e) => this.onRowClick(e));
+            root.addEventListener('change', (e) => this.onRowChange(e));
+            // A single-row action sends just that row; a full table render may bring other rows.
+            this._offRows = window.Livewire?.on?.('grid-rows', ({ rows }) => this.patchRows(rows));
+            this._unhookIsland = window.Livewire?.hook?.('island.morphed', ({ component }) => {
+                if (component?.el === this.$el) this.afterTableRender();
+            });
+            this.initWindow();
+            this._onFind = (e) => this.onFind(e);
+            window.addEventListener('keydown', this._onFind);
 
             if (options.poll) {
                 this.pollTimer = setInterval(() => this.sync(), options.poll * 1000);
@@ -93,8 +110,13 @@ document.addEventListener('alpine:init', () => {
 
         destroy() {
             this._unhookCommit?.();
+            this._unhookIsland?.();
+            this._offRows?.();
             clearInterval(this.pollTimer);
             window.removeEventListener('beforeunload', this._beforeUnload);
+            window.removeEventListener('keydown', this._onFind);
+            window.removeEventListener('resize', this._onResize);
+            document.documentElement.classList.remove('grid-windowed');
             this.cancelFill();
             this.cancelColumnDrag();
             this.handle?.remove();
@@ -405,6 +427,8 @@ document.addEventListener('alpine:init', () => {
                 if (res.signature !== this.signature) {
                     this.signature = res.signature;
                     this.$wire.$refresh();
+                } else if (res.rows) {
+                    this.patchRows(res.rows);
                 }
             } catch (e) {
                 // Next poll will retry.
@@ -668,6 +692,7 @@ document.addEventListener('alpine:init', () => {
                 this.setSelected(id, on);
             }
             this.lastSelected = id;
+            this.syncCheckboxes();
         },
         setSelected(id, on) {
             if (on) this.selected[id] = true;
@@ -676,10 +701,22 @@ document.addEventListener('alpine:init', () => {
         toggleAll(e) {
             if (e.target.checked) this.selectableRows().forEach((id) => (this.selected[id] = true));
             else this.clearSelection();
+            this.syncCheckboxes();
         },
         clearSelection() {
             this.selected = {};
             this.lastSelected = null;
+            this.syncCheckboxes();
+        },
+        /** Row checkboxes have no x-bind (see the header comment): set them, and the row highlight, from `selected`. */
+        syncCheckboxes() {
+            const root = this.$refs.grid || this.$el;
+            root.querySelectorAll('input[data-select-row]').forEach((box) => {
+                const on = this.selected[box.dataset.selectRow] === true;
+                if (box.checked !== on) box.checked = on;
+                const row = box.closest('tr');
+                if (row && row.classList.contains('is-selected') !== on) row.classList.toggle('is-selected', on);
+            });
         },
         /** Keeps the header checkbox in step: checked, indeterminate or empty. */
         syncSelectAll(el) {
@@ -706,6 +743,143 @@ document.addEventListener('alpine:init', () => {
             if (!ids.length || projectId === '__') return;
             await this.settle();
             if (await this.$wire.setRowsProject(ids, projectId === '' ? null : Number(projectId))) this.clearSelection();
+        },
+
+        // ------------------------------------------------------------ row actions and row updates
+
+        tableBody() {
+            return (this.$refs.grid || this.$el).querySelector('table.sheet > tbody');
+        },
+        onRowClick(e) {
+            const box = e.target.closest && e.target.closest('input[data-select-row]');
+            if (box) {
+                this.toggleRow(e, Number(box.dataset.selectRow));
+                return;
+            }
+            const button = e.target.closest && e.target.closest('button[data-act]');
+            const row = button && button.closest('tr[data-row-id]');
+            if (!row) return;
+            const id = Number(row.dataset.rowId);
+            switch (button.dataset.act) {
+                case 'approve': this.$wire.approveRow(id); break;
+                case 'reject': this.$wire.openReject(id); break;
+                case 'notes': this.$wire.openNotes(id); break;
+                case 'delete': if (window.confirm(button.dataset.confirm)) this.$wire.deleteRow(id); break;
+            }
+        },
+        onRowChange(e) {
+            const select = e.target.closest && e.target.closest('select[data-project-select]');
+            const row = select && select.closest('tr[data-row-id]');
+            if (row) this.$wire.setRowProject(Number(row.dataset.rowId), select.value);
+        },
+        /** Rows re-rendered on the server (a single-row action, or rows others changed: Grid::patchRows). */
+        patchRows(rows) {
+            const body = this.tableBody();
+            if (!body || !rows) return;
+            Object.entries(rows).forEach(([id, html]) => {
+                const row = body.querySelector(`:scope > tr[data-row-id="${id}"]`);
+                if (!row) return;
+                const hidden = row.classList.contains('v-off');
+                // A cell being edited keeps the version it was opened with, so a save still detects that
+                // someone else changed it meanwhile (like the cell sync in sync()).
+                const editing = [...row.querySelectorAll('input[data-cell]')]
+                    .filter((el) => el === document.activeElement || el.classList.contains('is-dirty') || el.classList.contains('is-error'))
+                    .map((el) => [el, el.dataset.saved, el.dataset.version, el.className, el.title]);
+                // Morph, not replace: the same elements stay (focus, typed text, pending edits).
+                window.Alpine.morph(row, html);
+                row.classList.toggle('v-off', hidden);
+                editing.forEach(([el, saved, version, className, title]) => {
+                    if (saved !== undefined) el.dataset.saved = saved;
+                    if (version !== undefined) el.dataset.version = version;
+                    el.className = className;
+                    el.title = title;
+                });
+            });
+            this.syncCheckboxes();
+            const active = document.activeElement;
+            if (!this.fill && this.isFillable(active)) this.placeHandle(active);
+        },
+        afterTableRender() {
+            this.refreshWindow();
+            this.syncCheckboxes();
+        },
+        /** Ctrl+F searches every row (the browser's search only sees rendered rows); again: browser search. */
+        onFind(e) {
+            if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.code !== 'KeyF') return;
+            const search = document.getElementById('grid-search');
+            if (!search || !this.$el.isConnected || document.activeElement === search || document.querySelector('[role="dialog"]')) return;
+            e.preventDefault();
+            search.focus();
+            search.select();
+        },
+
+        // ------------------------------------------------------------ rendered rows window (big lists)
+
+        initWindow() {
+            const grid = this.$refs.grid;
+            this.win = { rows: [], top: null, bottom: null, start: -1, end: -1, rowH: 35, bodyTop: 0, scrollTop: grid.scrollTop, viewH: grid.clientHeight };
+            this.collectRows();
+            // Measured while only the first rows are rendered (see app.css), so this layout is cheap.
+            const body = this.tableBody();
+            if (body) this.win.bodyTop = body.getBoundingClientRect().top - grid.getBoundingClientRect().top + grid.scrollTop;
+            const sample = this.win.rows[0];
+            if (sample && sample.offsetHeight > 0) this.win.rowH = sample.offsetHeight;
+            this.updateWindow(true);
+            document.documentElement.classList.add('grid-windowed');
+            grid.addEventListener('scroll', () => {
+                this.win.scrollTop = grid.scrollTop;
+                this.updateWindow();
+            }, { passive: true });
+            this._onResize = () => {
+                this.win.viewH = grid.clientHeight;
+                this.updateWindow(true);
+            };
+            window.addEventListener('resize', this._onResize);
+        },
+        collectRows() {
+            const body = this.tableBody();
+            this.win.rows = body ? [...body.querySelectorAll(':scope > tr[data-row-id]')] : [];
+            this.win.top = body && body.querySelector(':scope > #v-top > td');
+            this.win.bottom = body && body.querySelector(':scope > #v-bottom > td');
+        },
+        /** After the table was rendered again: rows may have come, gone or lost their .v-off. */
+        refreshWindow() {
+            if (!this.win) return;
+            this.collectRows();
+            this.updateWindow(true);
+        },
+        /**
+         * Renders the rows around the viewport (in steps of 10, with 24 rows to spare on each side) and gives
+         * the spacer rows the height of the rest. Uses the cached scroll position, so it never forces a layout
+         * of a freshly rendered table. The row holding the focus (or the fill source) always stays rendered.
+         */
+        updateWindow(force = false) {
+            const win = this.win;
+            const rows = win && win.rows;
+            if (!rows || !rows.length || !win.top || !win.bottom) return;
+            const STEP = 10;
+            const SPARE = 24;
+            const first = Math.max(0, Math.floor((win.scrollTop - win.bodyTop) / win.rowH));
+            const shown = Math.ceil(win.viewH / win.rowH) + 1;
+            const start = Math.max(0, Math.floor((first - SPARE) / STEP) * STEP);
+            const end = Math.min(rows.length - 1, Math.ceil((first + shown + SPARE) / STEP) * STEP);
+            if (!force && start === win.start && end === win.end) return;
+            win.start = start;
+            win.end = end;
+            const keep = (this.fill && this.fill.source) || document.activeElement;
+            const keepRow = keep && keep.closest ? keep.closest('tr[data-row-id]') : null;
+            let before = 0;
+            let after = 0;
+            rows.forEach((tr, i) => {
+                const off = (i < start || i > end) && tr !== keepRow;
+                if (off) {
+                    if (i < start) before++;
+                    else after++;
+                }
+                if (tr.classList.contains('v-off') !== off) tr.classList.toggle('v-off', off);
+            });
+            win.top.style.height = before * win.rowH + 'px';
+            win.bottom.style.height = after * win.rowH + 'px';
         },
 
         // ------------------------------------------------------------ column order (managers)
