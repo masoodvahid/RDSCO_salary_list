@@ -112,7 +112,7 @@
                     @endforeach
                 </select>
                 <label for="grid-search" class="sr-only">جستجو</label>
-                <input id="grid-search" type="search" wire:model.live.debounce.400ms="search" placeholder="جستجوی نام یا کد ملی" class="input h-8 w-52 text-[13px]">
+                <input id="grid-search" type="search" wire:model.live.debounce.400ms="search" placeholder="جستجوی نام یا کد ملی" title="جستجو در همه‌ی ردیف‌ها (Ctrl+F)" aria-keyshortcuts="Control+F" class="input h-8 w-52 text-[13px]">
             </div>
         </div>
 
@@ -141,7 +141,7 @@
     </div>
 
     {{-- ============ Grid ============ --}}
-    <div class="flex-1 overflow-auto bg-white" x-ref="grid">
+    <div class="flex-1 overflow-auto bg-white [overflow-anchor:none]" x-ref="grid">
         {{-- The table is an island: actions that do not change it (dialogs, comments…) skip it. See Grid::rendered(). --}}
         @island(name: 'table')
             @include('livewire.sheets.partials.table', $this->tableData)

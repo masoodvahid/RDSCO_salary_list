@@ -108,4 +108,36 @@ final class Digits
 
         return is_string($normalized) ? $normalized : '0';
     }
+
+    /**
+     * Exact sum of numeric strings, same result as chaining add(); empty and non-numeric values are skipped.
+     * Plain integers (what payroll amounts are) are added natively, which keeps the column totals of a
+     * big list cheap; anything else goes through add().
+     *
+     * @param  iterable<int, string|null>  $values
+     */
+    public static function sum(iterable $values): string
+    {
+        $integers = 0;
+        $rest = '0';
+        foreach ($values as $value) {
+            $value = (string) $value;
+            if (preg_match('/^-?\d{1,15}\z/', $value)) {
+                $integers += (int) $value;
+                // Far below PHP_INT_MAX, so adding another 15-digit value can never overflow.
+                if ($integers > 1e17 || $integers < -1e17) {
+                    $rest = self::add($rest, (string) $integers);
+                    $integers = 0;
+                }
+
+                continue;
+            }
+            $number = self::normalizeNumber($value);
+            if (is_string($number)) {
+                $rest = self::add($rest, $number);
+            }
+        }
+
+        return self::add((string) $integers, $rest);
+    }
 }

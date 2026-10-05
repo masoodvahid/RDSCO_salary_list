@@ -273,6 +273,29 @@
     background: #eff6ff;
     transition: background 0.6s;
 }
+/*
+ * Each input is its own layout boundary, so typing does not lay out the whole table again. Not "strict":
+ * style containment made showing or hiding a row cost time in proportion to the size of the table.
+ */
+.sheet input.cell,
+.sheet select.cell {
+    contain: size layout paint;
+}
+/*
+ * Big lists: sheet-grid.js renders only the rows near the viewport (the rest get .v-off) and sizes the two
+ * spacer rows to stand in for them. Until the script starts, only the first rows are rendered.
+ */
+.sheet > tbody > tr.v-off,
+html:not(.grid-windowed) .sheet > tbody > tr:nth-child(n + 62) {
+    display: none;
+}
+.sheet > tbody > tr.v-pad > td {
+    height: 0;
+    padding: 0;
+    border: 0;
+    /* looks like empty rows if a fast scroll gets there before the rows do */
+    background: repeating-linear-gradient(to bottom, #fff 0 34px, #e8ebf1 34px 35px);
+}
 
 /* Fill handle (bottom-left corner of the active cell in RTL, as in Excel). */
 .sheet td.fill-host {
@@ -328,10 +351,11 @@
     cursor: not-allowed;
     opacity: 0.35;
 }
-.sheet tbody tr:has(input[data-select-row]:checked) td {
+/* Set by sheet-grid.js with the checkbox (a :has() rule here made every style change in a big table slow). */
+.sheet tbody tr.is-selected td {
     background: #e8edff;
 }
-.sheet tbody tr:has(input[data-select-row]:checked) td.sticky-1 {
+.sheet tbody tr.is-selected td.sticky-1 {
     box-shadow: inset 3px 0 0 var(--color-accent);
 }
 
