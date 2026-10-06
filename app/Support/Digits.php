@@ -48,6 +48,17 @@ final class Digits
         return ($negative && $result !== '0') ? '-'.$result : $result;
     }
 
+    /**
+     * Whole number for number columns: canonical integer string, null when empty, false when not a whole
+     * number. "1,500,000" and "12.00" are accepted (12.00 is 12); "12.5" is not.
+     */
+    public static function normalizeInteger(?string $value): string|false|null
+    {
+        $number = self::normalizeNumber($value);
+
+        return is_string($number) && str_contains($number, '.') ? false : $number;
+    }
+
     /** 185000000 → "185,000,000" (Latin digits, used inside the grid). */
     public static function group(?string $value): string
     {

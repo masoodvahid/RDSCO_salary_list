@@ -66,7 +66,7 @@ final class GridRows
                 'model' => $column,
                 'c' => 4 + $i,
                 'num' => $number ? ' num text-left' : '',
-                'mode' => $number ? ' inputmode="decimal"' : '',
+                'mode' => $number ? ' inputmode="numeric"' : '',
             ];
         }
     }

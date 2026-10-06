@@ -106,6 +106,11 @@ final class SheetEditor
 
                         continue;
                     }
+                    if (Digits::normalizeInteger($value) === false) {
+                        $result['errors'][] = $key + ['message' => ColumnType::INTEGER_ONLY];
+
+                        continue;
+                    }
                     if (($rangeError = $column->rangeError($value)) !== null) {
                         $result['errors'][] = $key + ['message' => $rangeError];
 
@@ -445,10 +450,12 @@ final class SheetEditor
         }
 
         if ($type === ColumnType::Number->value && $column->type !== ColumnType::Number) {
-            $invalid = SheetCell::where('column_id', $column->id)->whereNotNull('value')->pluck('value')
-                ->contains(fn ($value) => Digits::normalizeNumber($value) === false);
-            if ($invalid) {
+            $values = SheetCell::where('column_id', $column->id)->whereNotNull('value')->pluck('value');
+            if ($values->contains(fn ($value) => Digits::normalizeNumber($value) === false)) {
                 throw ValidationException::withMessages(['columnType' => 'این ستون مقدار غیرعددی دارد و نمی‌تواند عددی شود.']);
+            }
+            if ($values->contains(fn ($value) => Digits::normalizeInteger($value) === false)) {
+                throw ValidationException::withMessages(['columnType' => 'این ستون مقدار اعشاری دارد و نمی‌تواند از نوع عدد صحیح شود.']);
             }
         }
 
@@ -588,14 +595,14 @@ final class SheetEditor
             $errors['columnType'] = 'نوع ستون معتبر نیست.';
         }
 
-        // A range only makes sense for numbers; switching to text drops it.
-        $min = $type === ColumnType::Number->value ? Digits::normalizeNumber($min) : null;
-        $max = $type === ColumnType::Number->value ? Digits::normalizeNumber($max) : null;
+        // A range only makes sense for numbers; switching to text drops it. Number columns hold whole numbers.
+        $min = $type === ColumnType::Number->value ? Digits::normalizeInteger($min) : null;
+        $max = $type === ColumnType::Number->value ? Digits::normalizeInteger($max) : null;
         if ($min === false || (is_string($min) && strlen($min) > 40)) {
-            $errors['columnMin'] = 'حداقل را به شکل عدد وارد کنید یا خالی بگذارید.';
+            $errors['columnMin'] = 'حداقل را به شکل عدد صحیح (بدون اعشار) وارد کنید یا خالی بگذارید.';
         }
         if ($max === false || (is_string($max) && strlen($max) > 40)) {
-            $errors['columnMax'] = 'حداکثر را به شکل عدد وارد کنید یا خالی بگذارید.';
+            $errors['columnMax'] = 'حداکثر را به شکل عدد صحیح (بدون اعشار) وارد کنید یا خالی بگذارید.';
         }
         if (is_string($min) && is_string($max) && ! isset($errors['columnMin']) && ! isset($errors['columnMax']) && Digits::compare($min, $max) > 0) {
             $errors['columnMax'] = 'حداکثر نباید از حداقل کمتر باشد.';

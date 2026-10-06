@@ -572,6 +572,9 @@ final class PersonnelImporter
             if ($value === false) {
                 return [null, "{$ref}: «{$raw}» عدد نیست"];
             }
+            if (Digits::normalizeInteger($value) === false) {
+                return [null, "{$ref}: «{$raw}» عدد صحیح نیست؛ اعشار مجاز نیست"];
+            }
             if ($column?->isOutOfRange($value)) {
                 return [null, "{$ref}: ".Digits::money($value)." مجاز نیست؛ باید {$column->rangeLabel()} باشد"];
             }

@@ -7,8 +7,8 @@
  * - Fill handle: drag the small square at the corner of the active cell up or down to copy
  *   its value into that column (Ctrl+D copies the value of the cell above), like Excel.
  * - Validation before saving: a number column's range (data-min/data-max on its <th>) and
- *   number format are checked first; invalid input is never queued. The error shows under
- *   the cell; Enter keeps the cell for correction, leaving it restores the saved value.
+ *   number format (whole numbers only) are checked first; invalid input is never queued. The error
+ *   shows under the cell; Enter keeps the cell for correction, leaving it restores the saved value.
  * - Managers reorder columns by dragging the grip in the column header.
  * - Managers select rows (Shift+click for a run of rows) to delete them or set their project.
  * - Number cells show thousands separators; raw value while editing.
@@ -218,6 +218,8 @@ document.addEventListener('alpine:init', () => {
             const value = this.raw(el);
             if (value === '') return null;
             if (!/^-?\d+(\.\d+)?$/.test(value)) return 'در این ستون فقط عدد وارد کنید.';
+            // Whole numbers only ("12.00" is still 12), as the server checks (Digits::normalizeInteger).
+            if (/\.\d*[1-9]/.test(value)) return 'در این ستون فقط عدد صحیح وارد کنید؛ اعشار مجاز نیست.';
             const rule = this.rule(el);
             const below = rule.min !== undefined && this.compare(value, rule.min) < 0;
             const above = rule.max !== undefined && this.compare(value, rule.max) > 0;

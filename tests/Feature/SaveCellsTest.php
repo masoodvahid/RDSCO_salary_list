@@ -2,12 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ColumnType;
 use App\Enums\ReviewStatus;
 use App\Models\ChangeLog;
 use App\Models\SheetCell;
 use App\Models\User;
 use App\Services\SheetEditor;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\BuildsSheets;
 use Tests\TestCase;
 
@@ -70,6 +73,45 @@ class SaveCellsTest extends TestCase
         $this->assertSame(0, SheetCell::count());
     }
 
+    public function test_number_columns_take_whole_numbers_only(): void
+    {
+        $editor = User::factory()->editor($this->projectA)->create();
+        $other = $this->makeRow($this->projectA);
+        // A value with a fraction saved before this rule stays as it is.
+        SheetCell::create(['row_id' => $other->id, 'column_id' => $this->openColumn->id, 'value' => '7.5', 'version' => 1]);
+
+        $result = $this->editorService->saveCells($editor, $this->sheet, [
+            ['row' => $this->rowA->id, 'column' => $this->openColumn->id, 'value' => '12.5'],
+            ['row' => $other->id, 'column' => $this->openColumn->id, 'value' => '۱۲٫۷۵', 'version' => 1],
+            ['row' => $this->rowA->id, 'column' => $this->textColumn->id, 'value' => '12.5'],
+        ]);
+
+        $this->assertCount(2, $result['errors']);
+        $this->assertSame('در این ستون فقط عدد صحیح وارد کنید؛ اعشار مجاز نیست.', $result['errors'][0]['message']);
+        $this->assertSame('7.5', SheetCell::where('row_id', $other->id)->value('value'));
+        $this->assertSame('12.5', SheetCell::where('row_id', $this->rowA->id)->where('column_id', $this->textColumn->id)->value('value'));
+
+        // A whole number written with zero decimals is just that number.
+        $result = $this->editorService->saveCells($editor, $this->sheet, [
+            ['row' => $this->rowA->id, 'column' => $this->openColumn->id, 'value' => '1,500,000.00'],
+            ['row' => $other->id, 'column' => $this->openColumn->id, 'value' => '8', 'version' => 1],
+        ]);
+        $this->assertSame(['1500000', '8'], array_column($result['saved'], 'value'));
+    }
+
+    public function test_a_text_column_with_fractions_cannot_become_a_number_column(): void
+    {
+        SheetCell::create(['row_id' => $this->rowA->id, 'column_id' => $this->textColumn->id, 'value' => '2.5', 'version' => 1]);
+
+        try {
+            $this->editorService->updateColumn($this->manager, $this->textColumn, 'توضیحات', 'number', false);
+            $this->fail('The type change should be refused.');
+        } catch (ValidationException $e) {
+            $this->assertSame('این ستون مقدار اعشاری دارد و نمی‌تواند از نوع عدد صحیح شود.', $e->errors()['columnType'][0]);
+        }
+        $this->assertSame(ColumnType::Text, $this->textColumn->fresh()->type);
+    }
+
     public function test_manager_edits_personnel_fields_with_validation(): void
     {
         $result = $this->editorService->saveCells($this->manager, $this->sheet, [
@@ -97,7 +139,7 @@ class SaveCellsTest extends TestCase
     {
         $editor = User::factory()->editor($this->projectA)->create();
 
-        $this->expectException(\Illuminate\Auth\Access\AuthorizationException::class);
+        $this->expectException(AuthorizationException::class);
         $this->editorService->addRow($editor, $this->sheet, [
             'first_name' => 'الف', 'last_name' => 'ب', 'national_code' => $this->validNationalCode(), 'project_id' => $this->projectA->id,
         ]);
@@ -111,7 +153,7 @@ class SaveCellsTest extends TestCase
         ]);
         $this->assertSame($code, $row->national_code);
 
-        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectException(ValidationException::class);
         $this->editorService->addRow($this->manager, $this->sheet, [
             'first_name' => 'علی', 'last_name' => 'رضایی', 'national_code' => $code,
         ]);

@@ -61,7 +61,7 @@ class ImportValuesTest extends TestCase
             ['1', 'نام عوض‌شده', 'x', $this->rowA->national_code, '999', 'سپهر', '12', '900000000', 'خوب', 'هرچه'],
             ['2', 'علی', 'غریبه', $stranger, '', '', '7', '', '', ''],
             ['3', 'نفر', 'سپهری', $this->rowB->national_code, '', '', '8', '', '', ''],
-            ['4', 'نفر', 'دوم', ltrim($ownRow->national_code, '0'), '', '', '۳٫۵', '', '', ''],
+            ['4', 'نفر', 'دوم', ltrim($ownRow->national_code, '0'), '', '', '۳٫۰', '', '', ''],
         ]);
 
         $result = app(PersonnelImporter::class)->import($this->editor, $this->sheet, $path, 'csv');
@@ -81,7 +81,7 @@ class ImportValuesTest extends TestCase
 
         $this->assertSame('12', $this->value($this->rowA, $this->openColumn));
         $this->assertSame('خوب', $this->value($this->rowA, $this->textColumn));
-        $this->assertSame('3.5', $this->value($ownRow, $this->openColumn));
+        $this->assertSame('3', $this->value($ownRow, $this->openColumn));
         $this->assertNull($this->value($this->rowA, $this->lockedColumn));
         $this->assertNull($this->value($this->rowB, $this->openColumn));
 
@@ -101,6 +101,7 @@ class ImportValuesTest extends TestCase
             [$this->rowA->national_code, 'الف', 'ب', '10'],
             [$second->national_code, 'مریم', 'صالحی', '40'],
             ['', 'بی', 'کد', '3'],
+            [$this->makeRow($this->projectA)->national_code, 'سینا', 'راد', '۱۲٫۵'],
         ]);
 
         try {
@@ -110,6 +111,7 @@ class ImportValuesTest extends TestCase
             $this->assertSame([
                 'سطر ۳ (مریم صالحی): ستون D «اضافه‌کار»: ۴۰ مجاز نیست؛ باید بین ۰ و ۳۱ باشد.',
                 'سطر ۴ (بی کد): کد ملی وارد نشده است.',
+                'سطر ۵ (سینا راد): ستون D «اضافه‌کار»: «۱۲٫۵» عدد صحیح نیست؛ اعشار مجاز نیست.',
             ], $e->errors()['importRows']);
         }
 

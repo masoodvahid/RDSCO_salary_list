@@ -79,14 +79,28 @@ class ColumnRangeTest extends TestCase
         $this->assertNull(SheetCell::first()->value);
     }
 
-    public function test_one_sided_range_and_decimals(): void
+    public function test_one_sided_range_of_whole_numbers(): void
     {
-        $column = $this->editorService->addColumn($this->manager, $this->sheet, 'نرخ', 'number', false, '-2.5', null);
+        $column = $this->editorService->addColumn($this->manager, $this->sheet, 'نرخ', 'number', false, '-2', null);
 
-        $this->assertTrue($column->isOutOfRange('-2.51'));
-        $this->assertFalse($column->isOutOfRange('-2.5'));
+        $this->assertTrue($column->isOutOfRange('-3'));
+        $this->assertFalse($column->isOutOfRange('-2'));
         $this->assertFalse($column->isOutOfRange('999999999999999999999'));
-        $this->assertSame('حداقل -۲.۵', $column->rangeLabel());
+        $this->assertSame('حداقل -۲', $column->rangeLabel());
+
+        // Number columns hold whole numbers, so a range with a fraction is refused ("10.0" is 10).
+        try {
+            $this->editorService->addColumn($this->manager, $this->sheet, 'ضریب', 'number', false, '-2.5', null);
+            $this->fail('A fractional minimum should be refused.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('عدد صحیح', $e->errors()['columnMin'][0]);
+        }
+        $this->assertSame('10', $this->editorService->addColumn($this->manager, $this->sheet, 'سقف', 'number', false, null, '10.0')->max_value);
+
+        // A range saved before (with a fraction) keeps working as it was.
+        $old = SheetColumn::create(['sheet_id' => $this->sheet->id, 'title' => 'قدیمی', 'type' => 'number', 'min_value' => '-2.5', 'position' => 9]);
+        $this->assertTrue($old->isOutOfRange('-3'));
+        $this->assertFalse($old->isOutOfRange('-2'));
     }
 
     public function test_narrowing_a_range_keeps_existing_values_and_counts_them(): void

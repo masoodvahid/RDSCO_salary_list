@@ -299,7 +299,7 @@
                                 <label for="column-min" class="sr-only">حداقل</label>
                                 <div class="relative">
                                     <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-ink-soft">حداقل</span>
-                                    <input id="column-min" wire:model="columnMin" inputmode="decimal" dir="ltr" class="input num pe-14 text-left" placeholder="بدون محدودیت">
+                                    <input id="column-min" wire:model="columnMin" inputmode="numeric" dir="ltr" class="input num pe-14 text-left" placeholder="بدون محدودیت">
                                 </div>
                                 @error('columnMin') <p class="error">{{ $message }}</p> @enderror
                             </div>
@@ -307,7 +307,7 @@
                                 <label for="column-max" class="sr-only">حداکثر</label>
                                 <div class="relative">
                                     <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-ink-soft">حداکثر</span>
-                                    <input id="column-max" wire:model="columnMax" inputmode="decimal" dir="ltr" class="input num pe-14 text-left" placeholder="بدون محدودیت">
+                                    <input id="column-max" wire:model="columnMax" inputmode="numeric" dir="ltr" class="input num pe-14 text-left" placeholder="بدون محدودیت">
                                 </div>
                                 @error('columnMax') <p class="error">{{ $message }}</p> @enderror
                             </div>
