@@ -30,9 +30,9 @@ class DemoSeeder extends Seeder
             ->syncProjects([$projects['دماوند']->id, $projects['سپهر']->id]);
         User::updateOrCreate(['mobile' => '09120000002'], ['name' => 'مدیر پروژه دماوند (نمونه)', 'job_title' => 'مدیر داخلی پروژه', 'role' => Role::Approver, 'is_active' => true])
             ->syncProjects([$projects['دماوند']->id]);
-        User::updateOrCreate(['mobile' => '09120000003'], ['name' => 'مالی (نمونه)', 'job_title' => 'مسئول حسابداری', 'role' => Role::Approver, 'is_active' => true])
+        User::updateOrCreate(['mobile' => '09120000003'], ['name' => 'مدیر مالی (نمونه)', 'job_title' => 'مدیر مالی', 'role' => Role::Finance, 'is_active' => true])
             ->syncProjects([]);
-        User::updateOrCreate(['mobile' => '09120000004'], ['name' => 'مدیرعامل (نمونه)', 'job_title' => 'مدیرعامل', 'role' => Role::Viewer, 'is_active' => true])
+        User::updateOrCreate(['mobile' => '09120000004'], ['name' => 'مدیرعامل (نمونه)', 'job_title' => 'مدیرعامل', 'role' => Role::Approver, 'is_active' => true])
             ->syncProjects([]);
 
         [$jy, $jm] = Jalali::previousMonth(...array_slice(Jalali::fromCarbon(now()), 0, 2));

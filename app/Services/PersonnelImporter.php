@@ -191,14 +191,14 @@ final class PersonnelImporter
                 if (! $sheetProject) {
                     $problems[] = "پروژه «{$projectName}» در پروژه‌های این ماه نیست"
                         .($monthProjects->isEmpty() ? '' : ' (پروژه‌های این ماه: '.$monthProjects->take(12)->join('، ').')');
-                } elseif ($sheetProject->stage === Stage::Final) {
-                    $problems[] = "لیست پروژه «{$projectName}» نهایی شده و قابل تغییر نیست";
+                } elseif ($sheetProject->stage->isLocked()) {
+                    $problems[] = "لیست پروژه «{$projectName}» تایید مدیرعامل گرفته و قفل است";
                 } else {
                     $projectId = $sheetProject->project_id;
                 }
             }
-            if ($existing?->project_id && $sheetProjectById->get($existing->project_id)?->stage === Stage::Final) {
-                $problems[] = 'این نفر در لیست نهایی‌شده‌ی پروژه «'.$sheetProjectById->get($existing->project_id)->project->name.'» است و قابل تغییر نیست';
+            if ($existing?->project_id && $sheetProjectById->get($existing->project_id)?->stage->isLocked()) {
+                $problems[] = 'این نفر در لیست قفل‌شده‌ی پروژه «'.$sheetProjectById->get($existing->project_id)->project->name.'» (تایید مدیرعامل یا نهایی) است و قابل تغییر نیست';
             }
 
             $values = [];

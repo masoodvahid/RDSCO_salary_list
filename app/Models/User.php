@@ -90,16 +90,25 @@ class User extends Authenticatable
         return $this->role === Role::Manager;
     }
 
-    /** Approver without a project scope acts at the finance stage. */
+    /** Approver without a project scope: approves as the CEO, after HR. */
     public function isGlobalApprover(): bool
     {
         return $this->role === Role::Approver && $this->projectIds() === [];
     }
 
-    /** Managers, and approvers / viewers with no project, see every project. An editor always works within projects. */
+    /** The finance manager gives the final approval, after the CEO. */
+    public function isFinance(): bool
+    {
+        return $this->role === Role::Finance;
+    }
+
+    /**
+     * Managers and finance, and approvers / viewers with no project, see every project. An editor always
+     * works within projects.
+     */
     public function hasAllProjects(): bool
     {
-        return $this->isManager() || ($this->role !== Role::Editor && $this->projectIds() === []);
+        return $this->isManager() || $this->isFinance() || ($this->role !== Role::Editor && $this->projectIds() === []);
     }
 
     public function scopeLabel(): string

@@ -181,19 +181,22 @@ class ImportTest extends TestCase
         $this->assertSame('12', SheetCell::where('row_id', $this->rowA->id)->where('column_id', $this->openColumn->id)->value('value'));
     }
 
-    public function test_rows_of_a_final_list_are_not_changed_by_the_import(): void
+    public function test_rows_of_a_locked_list_are_not_changed_by_the_import(): void
     {
-        $this->sheetProject($this->projectA)->update(['stage' => Stage::Final]);
         $path = $this->csv([
             ['نام', 'نام خانوادگی', 'کد ملی', 'اضافه‌کار'],
             ['نام', 'تازه', $this->rowA->national_code, '99'],
         ]);
 
-        try {
-            app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'csv');
-            $this->fail('Import should fail.');
-        } catch (ValidationException $e) {
-            $this->assertStringContainsString('در لیست نهایی‌شده‌ی پروژه «دماوند» است', $e->errors()['importRows'][0]);
+        foreach ([Stage::CeoApproved, Stage::Final] as $stage) {
+            $this->sheetProject($this->projectA)->update(['stage' => $stage]);
+            try {
+                app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'csv');
+                $this->fail("Import should fail at {$stage->name}.");
+            } catch (ValidationException $e) {
+                $this->assertStringContainsString('در لیست قفل‌شده‌ی پروژه «دماوند» (تایید مدیرعامل یا نهایی) است', $e->errors()['importRows'][0]);
+            }
         }
+        $this->assertSame($this->rowA->last_name, $this->rowA->fresh()->last_name);
     }
 }

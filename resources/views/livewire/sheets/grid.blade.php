@@ -252,7 +252,7 @@
                         x-on:change="assignProject($event.target.value); $event.target.value = '__'">
                     <option value="__" selected disabled class="text-ink">تعیین پروژه…</option>
                     @foreach ($sheetProjects as $sp)
-                        @if ($sp->stage !== Stage::Final)
+                        @if (! $sp->stage->isLocked())
                             <option value="{{ $sp->project_id }}" class="text-ink">{{ $sp->project->name }}</option>
                         @endif
                     @endforeach
@@ -366,7 +366,7 @@
                     <select id="row-project" wire:model="newRow.project_id" class="input">
                         <option value="">— بعداً انتخاب می‌کنم</option>
                         @foreach ($sheetProjects as $sp)
-                            @if ($sp->stage !== Stage::Final)
+                            @if (! $sp->stage->isLocked())
                                 <option value="{{ $sp->project_id }}">{{ $sp->project->name }}</option>
                             @endif
                         @endforeach

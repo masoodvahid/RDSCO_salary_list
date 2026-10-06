@@ -831,7 +831,7 @@ class Grid extends Component
             'columns' => $columns,
             'sheetProjects' => $this->sheetProjects,
             'isManager' => $this->access()->canManage($user),
-            'showReview' => $user->isManager() || $user->isGlobalApprover(),
+            'showReview' => $user->isManager() || $user->isGlobalApprover() || $user->isFinance(),
             'totals' => $this->totals($cells, $columns),
         ];
     }

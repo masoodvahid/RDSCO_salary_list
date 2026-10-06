@@ -90,8 +90,8 @@ final class SheetLifecycle
         if ((int) $sheet->jalali_year === $year && (int) $sheet->jalali_month === $month) {
             return 'این لیست همین حالا برای همین ماه است.';
         }
-        if (SheetProject::where('sheet_id', $sheet->id)->where('stage', Stage::Final->value)->exists()) {
-            return "لیست حقوق {$sheet->title()} نهایی شده و ماه آن قابل تغییر نیست.";
+        if (SheetProject::where('sheet_id', $sheet->id)->whereIn('stage', Stage::lockedValues())->exists()) {
+            return "لیست حقوق {$sheet->title()} پروژه‌ی قفل‌شده (تایید مدیرعامل یا نهایی) دارد و ماه آن قابل تغییر نیست.";
         }
         if ($this->isApproved($sheet)) {
             return "لیست حقوق {$sheet->title()} تایید شده است؛ برای تغییر ماه، اول تاییدها را با «بازگشایی» برگردانید.";

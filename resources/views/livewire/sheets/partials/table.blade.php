@@ -9,13 +9,12 @@
 --}}
 @php
 use App\Enums\ColumnType;
-use App\Enums\Stage;
 use App\Support\Digits;
 $identityFields = ['first_name' => ['نام', 'sticky-2', 120, false], 'last_name' => ['نام خانوادگی', 'sticky-3', 140, false], 'personnel_code' => ['کد پرسنلی', '', 100, true], 'national_code' => ['کد ملی', '', 116, true]];
 $lock = '<svg class="size-3 shrink-0" aria-hidden="true"><use href="#i-lock"/></svg>';
 @endphp
 @if ($isManager)
-<template id="project-options"><option value="">— انتخاب پروژه</option>@foreach ($sheetProjects as $sp)<option value="{{ $sp->project_id }}" @disabled($sp->stage === Stage::Final)>{{ $sp->project->name }}</option>@endforeach</template>
+<template id="project-options"><option value="">— انتخاب پروژه</option>@foreach ($sheetProjects as $sp)<option value="{{ $sp->project_id }}" @disabled($sp->stage->isLocked())>{{ $sp->project->name }}</option>@endforeach</template>
 @endif
 <table @class(['sheet', 'has-select' => $isManager])>
 <thead>

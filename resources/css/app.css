@@ -8,8 +8,9 @@
 
 /*
  * Design tokens.
- * Color carries meaning here: the four stage colors (draft → project → HR → final) run through
- * badges, filters, the dashboard and the brand mark. Everything else stays neutral and light.
+ * Color carries meaning here: the stage colors (draft → project → HR → CEO → final) run through
+ * badges, filters and the dashboard (the brand mark keeps its four bars). Everything else stays
+ * neutral and light.
  */
 @theme {
     --font-sans: 'Vazirmatn', ui-sans-serif, system-ui, Tahoma, sans-serif;
@@ -27,6 +28,7 @@
     --color-stage-draft: #f59e0b;
     --color-stage-project: #0ea5e9;
     --color-stage-hr: #7c5cf6;
+    --color-stage-ceo: #ec4899;
     --color-stage-final: #10b981;
 
     --radius-card: 14px;
