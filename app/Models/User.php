@@ -25,12 +25,16 @@ class User extends Authenticatable
     /** Mirrors the column defaults so freshly created models match the database. */
     protected $attributes = ['role' => 'viewer', 'is_active' => true];
 
+    /** Column widths kept per user; the oldest go first, so the list stays small as columns change over the months. */
+    private const MAX_GRID_WIDTHS = 200;
+
     protected function casts(): array
     {
         return [
             'role' => Role::class,
             'is_active' => 'boolean',
             'last_login_at' => 'datetime',
+            'preferences' => 'array',
         ];
     }
 
@@ -125,6 +129,33 @@ class User extends Authenticatable
         }
 
         return $names->take(2)->join('، ').' و '.Digits::toPersian($names->count() - 2).' پروژه‌ی دیگر';
+    }
+
+    /** @return array<string, int> widths the user dragged in the payroll grid: 'f:first_name' / 'c:<column title>' => px */
+    public function gridWidths(): array
+    {
+        $widths = $this->preferences['grid_widths'] ?? [];
+
+        return is_array($widths) ? array_filter($widths, 'is_int') : [];
+    }
+
+    /** Remembers one grid column width, or forgets it (back to the default) with null. */
+    public function rememberGridWidth(string $key, ?int $width): void
+    {
+        DB::transaction(function () use ($key, $width) {
+            $locked = static::whereKey($this->id)->lockForUpdate()->firstOrFail();
+            $preferences = is_array($locked->preferences) ? $locked->preferences : [];
+            $widths = is_array($preferences['grid_widths'] ?? null) ? $preferences['grid_widths'] : [];
+
+            unset($widths[$key]); // re-added last, so it counts as the most recent
+            if ($width !== null) {
+                $widths[$key] = $width;
+            }
+            $preferences['grid_widths'] = array_slice($widths, -self::MAX_GRID_WIDTHS, null, true);
+
+            $locked->forceFill(['preferences' => $preferences])->saveQuietly();
+            $this->forceFill(['preferences' => $preferences])->syncOriginalAttribute('preferences');
+        });
     }
 
     /** "Name (job title)" for signatures and notes; just the name when no title is set. */

@@ -155,7 +155,11 @@
     border-spacing: 0;
     font-size: 13px;
     table-layout: fixed;
-    width: max-content;
+    /*
+     * A definite width makes the fixed layout use exactly the header widths (the table is as wide as their
+     * sum, or the screen): with max-content a column could not be made narrower than its header text.
+     */
+    width: 1px;
     min-width: 100%;
 }
 .sheet th,
@@ -205,7 +209,8 @@
 }
 .sheet .sticky-3 {
     position: sticky;
-    right: calc(var(--index-col) + 120px);
+    /* --w-first: width of the first-name column (the user may resize it), set on the table */
+    right: calc(var(--index-col) + var(--w-first, 120px));
     z-index: 2;
     box-shadow: -1px 0 0 var(--color-line-strong);
 }
@@ -414,6 +419,36 @@ html:not(.grid-windowed) .sheet > tbody > tr:nth-child(n + 62) {
 .sheet input.cell.is-reverted {
     background: #fef2f2;
     transition: background 1.2s;
+}
+
+/* Column widths (everyone; each user's own). The handle sits on the end edge of the header cell. */
+.col-resize {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    width: 7px;
+    cursor: col-resize;
+    touch-action: none;
+}
+.col-resize::after {
+    content: '';
+    position: absolute;
+    inset-block: 9px;
+    inset-inline-end: 2px;
+    width: 2px;
+    border-radius: 1px;
+}
+.sheet thead th:hover .col-resize::after {
+    background: var(--color-line-strong);
+}
+.col-resize:hover::after,
+.col-resize.is-active::after {
+    background: var(--color-accent);
+}
+.is-resizing-column,
+.is-resizing-column * {
+    cursor: col-resize !important;
+    user-select: none;
 }
 
 /* Column reordering (managers). */

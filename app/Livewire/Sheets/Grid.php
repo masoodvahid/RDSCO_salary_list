@@ -37,6 +37,13 @@ class Grid extends Component
 {
     use WithFileUploads;
 
+    /** Columns the user may resize besides the payroll columns => widest allowed (px); sticky name columns stay narrower. */
+    private const RESIZABLE_FIELDS = ['first_name' => 320, 'last_name' => 320, 'personnel_code' => 600, 'national_code' => 600, 'project' => 600];
+
+    private const MIN_COLUMN_WIDTH = 56;
+
+    private const MAX_COLUMN_WIDTH = 600;
+
     #[Locked]
     public int $sheetId;
 
@@ -390,6 +397,29 @@ class Grid extends Component
         $editor->reorderColumns($this->user(), $this->sheet, $columnIds);
         $this->refreshData();
         $this->flash('ترتیب ستون‌ها ذخیره شد.');
+    }
+
+    /**
+     * Remembers the width the user dragged a column to. It is their own view setting (everyone may resize),
+     * kept by title for payroll columns so it carries over to the next months. Null = back to the default.
+     *
+     * @param  string  $column  an identity field / 'project', or a payroll column id
+     */
+    #[Renderless]
+    public function saveColumnWidth(string $column, $width = null): void
+    {
+        if (array_key_exists($column, self::RESIZABLE_FIELDS)) {
+            [$key, $max] = ['f:'.$column, self::RESIZABLE_FIELDS[$column]];
+        } elseif (ctype_digit($column) && ($title = $this->columns->firstWhere('id', (int) $column)?->title) !== null) {
+            [$key, $max] = ['c:'.$title, self::MAX_COLUMN_WIDTH];
+        } else {
+            return;
+        }
+        if ($width !== null && ! is_numeric($width)) {
+            return;
+        }
+
+        $this->user()->rememberGridWidth($key, $width === null ? null : max(self::MIN_COLUMN_WIDTH, min($max, (int) round((float) $width))));
     }
 
     // ---------------------------------------------------------------- rows (manager)
@@ -833,6 +863,7 @@ class Grid extends Component
             'isManager' => $this->access()->canManage($user),
             'showReview' => $user->isManager() || $user->isGlobalApprover() || $user->isFinance(),
             'totals' => $this->totals($cells, $columns),
+            'widths' => $user->gridWidths(),
         ];
     }
 
