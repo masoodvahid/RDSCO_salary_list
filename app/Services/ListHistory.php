@@ -9,6 +9,8 @@ use App\Models\ListComment;
 use App\Models\Sheet;
 use App\Models\SheetProject;
 use App\Models\User;
+use App\Support\Digits;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -25,9 +27,15 @@ final class ListHistory
     /** Events of the whole list (not of one project) that every project's timeline shows. */
     private const SHEET_ACTIONS = ['sheet.create', 'sheet.month'];
 
+    /** Changes the manager made to an approved list are shown as one line per sitting, with a few examples. */
+    private const AFTER_APPROVAL_EXAMPLES = 3;
+
+    private const AFTER_APPROVAL_SITTING_MINUTES = 30;
+
     public function __construct(
         private readonly SheetAccess $access,
         private readonly ChangeLogger $log,
+        private readonly UserActivity $activity,
     ) {}
 
     // ------------------------------------------------------------------ comments
@@ -106,31 +114,84 @@ final class ListHistory
     // ------------------------------------------------------------------ approval timeline
 
     /**
-     * Oldest first. "changed" marks a valid signature whose data has changed since (needs $hashes).
+     * Oldest first. "changed" marks a valid signature whose data has changed since (needs $hashes). Changes the
+     * manager made after the list was approved (see SheetEditor::afterApproval) appear too, one line per sitting.
      *
      * @param  Collection<int, SheetProject>  $sheetProjects
      * @param  array<int, string>  $hashes  sheet_project_id => current data hash
-     * @return array<int, list<array{at: \Carbon\Carbon, tone: string, text: string, by: ?string, detail: ?string, revoked: bool, changed: bool}>>
+     * @return array<int, list<array{at: Carbon, tone: string, text: string, by: ?string, detail: ?string, revoked: bool, changed: bool}>>
      */
     public function timelines(Sheet $sheet, Collection $sheetProjects, array $hashes = []): array
     {
         $logs = ChangeLog::where('sheet_id', $sheet->id)
-            ->whereIn('action', self::TIMELINE_ACTIONS)
+            ->where(fn ($q) => $q->whereIn('action', self::TIMELINE_ACTIONS)->orWhereNotNull('meta->after_approval'))
             ->with('user')
             ->orderBy('id')
             ->get();
         $approvals = Approval::whereIn('sheet_project_id', $sheetProjects->pluck('id'))->get()->keyBy('id');
+        $edits = $logs->filter(fn (ChangeLog $log) => UserActivity::afterApproval($log) !== null)->keyBy('id');
+        $described = $edits->isEmpty() ? collect() : $this->activity->describeChanges($edits);
 
         $timelines = [];
         foreach ($sheetProjects as $sp) {
-            $timelines[$sp->id] = $logs
-                ->filter(fn (ChangeLog $log) => in_array($log->action, self::SHEET_ACTIONS, true) || (int) ($log->meta['project_id'] ?? 0) === (int) $sp->project_id)
-                ->map(fn (ChangeLog $log) => $this->entry($log, $approvals, $hashes[$sp->id] ?? null))
-                ->values()
-                ->all();
+            $events = [];
+            $sitting = null; // consecutive changes after approval by one person: [stage, logs]
+            foreach ($logs as $log) {
+                if ($edits->has($log->id)) {
+                    $stage = UserActivity::afterApproval($log, (int) $sp->project_id);
+                    if ($stage === null) {
+                        continue; // a change to another project's list
+                    }
+                    $last = $sitting ? end($sitting[1]) : null;
+                    if ($last && $last->user_id === $log->user_id && $sitting[0] === $stage
+                        && $log->created_at->diffInMinutes($last->created_at, true) <= self::AFTER_APPROVAL_SITTING_MINUTES) {
+                        $sitting[1][] = $log;
+                    } else {
+                        if ($sitting) {
+                            $events[] = $this->sittingEntry($sitting, $described);
+                        }
+                        $sitting = [$stage, [$log]];
+                    }
+
+                    continue;
+                }
+                if (! in_array($log->action, self::SHEET_ACTIONS, true) && (int) ($log->meta['project_id'] ?? 0) !== (int) $sp->project_id) {
+                    continue;
+                }
+                if ($sitting) {
+                    $events[] = $this->sittingEntry($sitting, $described);
+                    $sitting = null;
+                }
+                $events[] = $this->entry($log, $approvals, $hashes[$sp->id] ?? null);
+            }
+            if ($sitting) {
+                $events[] = $this->sittingEntry($sitting, $described);
+            }
+            $timelines[$sp->id] = $events;
         }
 
         return $timelines;
+    }
+
+    /** @param  array{0: Stage, 1: list<ChangeLog>}  $sitting */
+    private function sittingEntry(array $sitting, Collection $described): array
+    {
+        [$stage, $logs] = $sitting;
+        $examples = collect($logs)->take(self::AFTER_APPROVAL_EXAMPLES)
+            ->map(fn (ChangeLog $log) => $described->get($log->id))
+            ->filter()
+            ->map(fn (array $line) => $line['text'].($line['detail'] ? ': '.$line['detail'] : ''));
+        $more = count($logs) - $examples->count();
+
+        return [
+            'at' => end($logs)->created_at,
+            'tone' => 'bg-orange-500',
+            'text' => 'بعد از «'.$stage->label().'» لیست را تغییر داد',
+            'by' => $logs[0]->user?->nameWithTitle(),
+            'detail' => $examples->join('؛ ').($more > 0 ? '؛ و '.Digits::toPersian($more).' تغییر دیگر' : ''),
+            'revoked' => false,
+            'changed' => false,
+        ];
     }
 
     private function entry(ChangeLog $log, Collection $approvals, ?string $hash): array

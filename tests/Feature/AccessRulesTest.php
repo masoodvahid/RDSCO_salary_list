@@ -58,11 +58,13 @@ class AccessRulesTest extends TestCase
         $spA->update(['stage' => Stage::HrApproved]);
         $this->assertTrue($this->access->canEditCell($this->manager, $this->sheet, $this->rowA, $this->openColumn, $spA));
 
-        // From the CEO's approval on, nobody edits (the old final stage, so lists that were final stay locked).
+        // From the CEO's approval on, the list is locked, except that HR may still correct it (logged as after
+        // approval); taking it back (reopen, rejecting a record) stays with finance.
         foreach ([Stage::CeoApproved, Stage::Final] as $stage) {
             $spA->update(['stage' => $stage]);
-            $this->assertFalse($this->access->canEditCell($this->manager, $this->sheet, $this->rowA, $this->openColumn, $spA), $stage->name);
-            $this->assertFalse($this->access->canEditIdentity($this->manager, $spA), $stage->name);
+            $this->assertFalse($this->access->canEditCell($approver, $this->sheet, $this->rowA, $this->openColumn, $spA), $stage->name);
+            $this->assertTrue($this->access->canEditCell($this->manager, $this->sheet, $this->rowA, $this->lockedColumn, $spA), $stage->name);
+            $this->assertTrue($this->access->canEditIdentity($this->manager, $spA), $stage->name);
             $this->assertFalse($this->access->canReopen($this->manager, $spA), $stage->name);
             $this->assertFalse($this->access->canReview($this->manager, $spA), $stage->name);
         }

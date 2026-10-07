@@ -26,8 +26,9 @@ use Illuminate\Database\Eloquent\Builder;
  *  - manager:  everything (structure, locked cells, rows, members, HR approval, record review, reopen)
  *
  * Approval chain: editor → project approver → manager (HR) → CEO (all-project approver) → finance (final).
- * From the CEO's approval on, the list is locked for everyone (Stage::isLocked()); only a finance rejection
- * sends it back.
+ * From the CEO's approval on, the list is locked (Stage::isLocked()) for everyone but the manager (HR), who may
+ * still change it at any stage: those changes are logged as made after approval (SheetEditor::afterApproval)
+ * and the signatures show "changed after approval". Only a finance rejection sends a locked list back.
  */
 final class SheetAccess
 {
@@ -101,8 +102,9 @@ final class SheetAccess
 
         $stage = $sheetProject?->stage ?? Stage::Draft;
 
+        // HR may correct a list at any stage, even after the CEO's and finance's approval (logged as such).
         if ($user->role === Role::Manager) {
-            return ! $stage->isLocked();
+            return true;
         }
 
         if (! in_array($user->role, [Role::Editor, Role::Approver], true)) {
@@ -131,9 +133,10 @@ final class SheetAccess
             ->exists();
     }
 
+    /** Personnel fields, rows and their project: the manager, at any stage (see canEditRowCells). */
     public function canEditIdentity(User $user, ?SheetProject $sheetProject): bool
     {
-        return $this->canManage($user) && ! ($sheetProject?->stage ?? Stage::Draft)->isLocked();
+        return $this->canManage($user);
     }
 
     /** Per-record approve/reject with a note. */

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\Stage;
+use App\Models\ChangeLog;
 use App\Models\SheetCell;
 use App\Models\SheetColumn;
 use App\Models\SheetRow;
@@ -209,48 +210,33 @@ class ImportTest extends TestCase
         $this->assertSame('7.5', SheetCell::where('row_id', $this->rowA->id)->where('column_id', $this->openColumn->id)->value('value'));
     }
 
-    public function test_no_new_column_while_a_list_of_the_month_is_locked(): void
+    public function test_the_manager_import_changes_approved_lists_and_logs_each_change_there(): void
     {
-        $this->sheetProject($this->projectB)->update(['stage' => Stage::CeoApproved]);
+        $this->sheetProject($this->projectA)->update(['stage' => Stage::Final]);
+        $newCode = $this->validNationalCode();
         $path = $this->csv([
-            ['نام', 'نام خانوادگی', 'کد ملی', 'اضافه‌کار', 'پاداش'],
-            ['نفر', $this->rowA->last_name, $this->rowA->national_code, '9', '500'],
+            ['نام', 'نام خانوادگی', 'کد ملی', 'پروژه', 'اضافه‌کار', 'پاداش'],
+            ['نفر', 'تازه', $this->rowA->national_code, '', '9', '500'],     // final list
+            ['نفر', $this->rowB->last_name, $this->rowB->national_code, '', '4', ''], // open list
+            ['مینا', 'راد', $newCode, 'دماوند', '2', ''],                    // a new person in the final list
         ]);
 
-        try {
-            app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'csv');
-            $this->fail('Import should fail.');
-        } catch (ValidationException $e) {
-            $this->assertStringContainsString('ستون جدید ساخته نمی‌شود', $e->errors()['importFile'][0]);
-            $this->assertStringContainsString('«پاداش»', $e->errors()['importFile'][1]);
-        }
-        $this->assertFalse(SheetColumn::where('sheet_id', $this->sheet->id)->where('title', 'پاداش')->exists());
+        $result = app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'csv');
 
-        // Without the new column the same file goes in (the open project's person only).
-        $path = $this->csv([
-            ['نام', 'نام خانوادگی', 'کد ملی', 'اضافه‌کار'],
-            ['نفر', $this->rowA->last_name, $this->rowA->national_code, '9'],
-        ]);
-        app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'csv');
-        $this->assertSame('9', SheetCell::where('row_id', $this->rowA->id)->where('column_id', $this->openColumn->id)->value('value'));
-    }
+        $this->assertSame(['mode' => 'full', 'created' => 1, 'updated' => 2, 'columns' => 1], $result);
+        $this->assertSame('تازه', $this->rowA->fresh()->last_name);
+        $marked = ChangeLog::whereNotNull('meta->after_approval')->get();
+        $newRow = SheetRow::where('national_code', $newCode)->firstOrFail();
+        $this->assertEqualsCanonicalizing([
+            'column.create:', 'row.update:'.$this->rowA->id, 'cell.update:'.$this->rowA->id, 'cell.update:'.$this->rowA->id,
+            'row.create:'.$newRow->id, 'cell.update:'.$newRow->id,
+        ], $marked->map(fn (ChangeLog $log) => $log->action.':'.$log->row_id)->all());
+        $this->assertTrue($marked->every(fn (ChangeLog $log) => $log->meta['after_approval'] === [$this->projectA->id => Stage::Final->value] && $log->meta['source'] === 'import'));
+        $cell = $marked->first(fn (ChangeLog $log) => $log->action === 'cell.update' && $log->column_id === $this->openColumn->id && $log->row_id === $this->rowA->id);
+        $this->assertSame([null, '9'], [$cell->old_value, $cell->new_value]);
 
-    public function test_rows_of_a_locked_list_are_not_changed_by_the_import(): void
-    {
-        $path = $this->csv([
-            ['نام', 'نام خانوادگی', 'کد ملی', 'اضافه‌کار'],
-            ['نام', 'تازه', $this->rowA->national_code, '99'],
-        ]);
-
-        foreach ([Stage::CeoApproved, Stage::Final] as $stage) {
-            $this->sheetProject($this->projectA)->update(['stage' => $stage]);
-            try {
-                app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'csv');
-                $this->fail("Import should fail at {$stage->name}.");
-            } catch (ValidationException $e) {
-                $this->assertStringContainsString('در لیست قفل‌شده‌ی پروژه «دماوند» (تایید مدیرعامل یا نهایی) است', $e->errors()['importRows'][0]);
-            }
-        }
-        $this->assertSame($this->rowA->last_name, $this->rowA->fresh()->last_name);
+        // The open list's person is in the one-line summary only, as before.
+        $this->assertSame(0, ChangeLog::where('row_id', $this->rowB->id)->count());
+        $this->assertSame(1, ChangeLog::where('action', 'sheet.import')->count());
     }
 }

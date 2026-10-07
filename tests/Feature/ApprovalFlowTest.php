@@ -63,14 +63,18 @@ class ApprovalFlowTest extends TestCase
 
         $this->approve($this->manager, Stage::HrApproved);
         $this->approve($ceo, Stage::CeoApproved);
+        // Locked for the project, but HR may still correct it (logged as after approval).
         $this->assertFalse(app(SheetAccess::class)->canEditCell(
+            $approver, $this->sheet, $this->rowA, $this->openColumn, $this->sheetProject($this->projectA)
+        ));
+        $this->assertTrue(app(SheetAccess::class)->canEditCell(
             $this->manager, $this->sheet, $this->rowA, $this->openColumn, $this->sheetProject($this->projectA)
         ));
         $this->approve($finance, Stage::Final);
 
         $this->assertSame([1, 2, 3, 4], Approval::whereNull('revoked_at')->orderBy('id')->get()->map(fn (Approval $a) => $a->stage->value)->all());
         $this->assertSame([$approver->id, $this->manager->id, $ceo->id, $finance->id], Approval::orderBy('id')->pluck('user_id')->map(fn ($id) => (int) $id)->all());
-        $this->assertFalse(app(SheetAccess::class)->canEditCell(
+        $this->assertTrue(app(SheetAccess::class)->canEditCell(
             $this->manager, $this->sheet, $this->rowA, $this->openColumn, $this->sheetProject($this->projectA)
         ));
     }
@@ -98,9 +102,9 @@ class ApprovalFlowTest extends TestCase
         $this->assertFalse($event['revoked']);
         $this->assertFalse($event['changed']);
 
-        // Locked as it was, and out of HR's reach as it was.
+        // Locked for the project; HR cannot take it back (no reopen), though HR may still correct it.
         $access = app(SheetAccess::class);
-        $this->assertFalse($access->canEditCell($this->manager, $this->sheet, $this->rowA, $this->openColumn, $sp));
+        $this->assertFalse($access->canEditCell(User::factory()->approver($this->projectA)->create(), $this->sheet, $this->rowA, $this->openColumn, $sp));
         $this->assertFalse($access->canReopen($this->manager, $sp));
         $this->assertNull($access->approvalTarget($ceo, $sp));
 

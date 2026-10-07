@@ -122,6 +122,24 @@
             </div>
         @endif
 
+        @php
+            // Approved lists in view that only the manager may still change.
+            $lockedInView = $isManager ? $this->visibleProjects->filter(fn ($sp) => $sp->stage->isLocked() && (! $currentSp || $sp->id === $currentSp->id)) : collect();
+        @endphp
+        @if ($lockedInView->isNotEmpty())
+            <div class="mt-3 flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[13px] leading-6 text-orange-900" role="note">
+                <span class="mt-1.5">{!! $lockIcon !!}</span>
+                <span>
+                    @if ($lockedInView->count() === 1)
+                        لیست {{ $lockedInView->first()->project->name }} «{{ $lockedInView->first()->stage->label() }}» گرفته است.
+                    @else
+                        لیست {{ $lockedInView->map(fn ($sp) => $sp->project->name)->join('، ') }} تایید مدیرعامل یا نهایی گرفته است.
+                    @endif
+                    شما به‌عنوان مدیر هنوز می‌توانید آن را تغییر دهید؛ هر تغییر با برچسب «بعد از تایید» در روند تایید لیست و فعالیت‌ها ثبت می‌شود و کنار امضاها «تغییر پس از تایید» نمایش داده می‌شود.
+                </span>
+            </div>
+        @endif
+
         @if ($currentSp && $approvals->isNotEmpty())
             <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-2.5 text-[12.5px] text-ink-soft">
                 <span class="font-semibold text-ink">امضاها</span>
@@ -252,9 +270,7 @@
                         x-on:change="assignProject($event.target.value); $event.target.value = '__'">
                     <option value="__" selected disabled class="text-ink">تعیین پروژه…</option>
                     @foreach ($sheetProjects as $sp)
-                        @if (! $sp->stage->isLocked())
-                            <option value="{{ $sp->project_id }}" class="text-ink">{{ $sp->project->name }}</option>
-                        @endif
+                        <option value="{{ $sp->project_id }}" class="text-ink">{{ $sp->project->name }}</option>
                     @endforeach
                     <option value="" class="text-ink">بدون پروژه</option>
                 </select>
@@ -366,9 +382,7 @@
                     <select id="row-project" wire:model="newRow.project_id" class="input">
                         <option value="">— بعداً انتخاب می‌کنم</option>
                         @foreach ($sheetProjects as $sp)
-                            @if (! $sp->stage->isLocked())
-                                <option value="{{ $sp->project_id }}">{{ $sp->project->name }}</option>
-                            @endif
+                            <option value="{{ $sp->project_id }}">{{ $sp->project->name }}</option>
                         @endforeach
                     </select>
                     @error('newRow.project_id') <p class="error">{{ $message }}</p> @enderror

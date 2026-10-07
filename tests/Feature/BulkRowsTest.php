@@ -12,7 +12,6 @@ use App\Models\User;
 use App\Services\SheetEditor;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\Support\BuildsSheets;
 use Tests\TestCase;
@@ -46,19 +45,15 @@ class BulkRowsTest extends TestCase
         $this->assertTrue(SheetRow::whereKey($this->rowA->id)->exists());
     }
 
-    public function test_rows_of_a_locked_project_block_the_whole_delete(): void
+    public function test_rows_of_an_approved_list_are_deleted_and_logged_as_after_approval(): void
     {
-        // Locked from the CEO's approval on (Final included).
-        $this->sheetProject($this->projectB)->update(['stage' => Stage::CeoApproved]);
+        $this->sheetProject($this->projectB)->update(['stage' => Stage::Final]);
 
-        try {
-            app(SheetEditor::class)->deleteRows($this->manager, $this->sheet, [$this->rowA->id, $this->rowB->id]);
-            $this->fail('Delete should be refused.');
-        } catch (ValidationException $e) {
-            $this->assertArrayHasKey('rows', $e->errors());
-        }
+        $this->assertSame(2, app(SheetEditor::class)->deleteRows($this->manager, $this->sheet, [$this->rowA->id, $this->rowB->id]));
 
-        $this->assertSame(2, SheetRow::whereIn('id', [$this->rowA->id, $this->rowB->id])->count());
+        $logs = ChangeLog::where('action', 'row.delete')->get()->keyBy('row_id');
+        $this->assertNull($logs[$this->rowA->id]->meta);
+        $this->assertSame([$this->projectB->id => Stage::Final->value], $logs[$this->rowB->id]->meta['after_approval']);
     }
 
     public function test_rows_of_other_sheets_are_ignored_and_editors_cannot_bulk_delete(): void
@@ -88,8 +83,9 @@ class BulkRowsTest extends TestCase
             ->assertReturned(true);
         $this->assertSame(3, SheetRow::whereIn('id', $ids)->whereNull('project_id')->count());
 
+        // Into an approved list too; each move is logged as after approval.
         $this->sheetProject($this->projectA)->update(['stage' => Stage::CeoApproved]);
-        $this->expectException(ValidationException::class);
-        app(SheetEditor::class)->setRowsProject($this->manager, $this->sheet, $ids, $this->projectA->id);
+        $this->assertSame(3, app(SheetEditor::class)->setRowsProject($this->manager, $this->sheet, $ids, $this->projectA->id));
+        $this->assertSame(3, ChangeLog::where('action', 'row.project')->whereNotNull('meta->after_approval')->count());
     }
 }
