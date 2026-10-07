@@ -307,19 +307,21 @@ document.addEventListener('alpine:init', () => {
 
         /** Queues a cell for saving after validating it. Returns false when the input was refused. */
         queue(el) {
+            const value = this.raw(el);
+            const key = this.keyOf(el);
+            // Unchanged is never refused: values saved before a rule (a fraction, a range set later) may stay.
+            if (value === (el.dataset.saved ?? '')) {
+                this.clearError(el);
+                delete this.pending[key];
+                el.classList.remove('is-dirty');
+                return true;
+            }
             const error = this.validate(el);
             if (error) {
                 this.reject(el, error);
                 return false;
             }
             this.clearError(el);
-            const value = this.raw(el);
-            const key = this.keyOf(el);
-            if (value === (el.dataset.saved ?? '')) {
-                delete this.pending[key];
-                el.classList.remove('is-dirty');
-                return true;
-            }
             this.pending[key] = {
                 row: Number(el.dataset.row),
                 column: el.dataset.col ? Number(el.dataset.col) : null,
@@ -909,20 +911,28 @@ document.addEventListener('alpine:init', () => {
             handle.addEventListener('pointermove', move);
             handle.addEventListener('pointerup', up);
             handle.addEventListener('pointercancel', cancel);
+            handle.addEventListener('lostpointercapture', up);
             window.addEventListener('keydown', key);
+            // Columns are at least as wide as their content, and share out any room left when the table is narrower
+            // than the screen; start from what the user sees, or from the set width when that room is shared out.
+            const table = th.closest('table');
+            const stretched = table && table.offsetWidth <= (table.parentElement?.clientWidth || 0) + 1;
+            const shown = th.getBoundingClientRect().width;
             this.colResize = {
                 handle,
                 th,
                 key: handle.dataset.colResize,
                 rtl: getComputedStyle(th).direction === 'rtl',
                 x: e.clientX,
-                start: Math.round(th.getBoundingClientRect().width),
+                start: Math.round(stretched ? parseFloat(th.style.width) || shown : shown),
+                original: th.style.width,
                 width: null,
                 frame: null,
                 unbind: () => {
                     handle.removeEventListener('pointermove', move);
                     handle.removeEventListener('pointerup', up);
                     handle.removeEventListener('pointercancel', cancel);
+                    handle.removeEventListener('lostpointercapture', up);
                     window.removeEventListener('keydown', key);
                 },
             };
@@ -963,7 +973,7 @@ document.addEventListener('alpine:init', () => {
         cancelColumnResize() {
             if (!this.colResize) return;
             const resize = this.clearColumnResize();
-            if (resize.width !== null) this.setColumnWidth(resize.th, resize.key, resize.start);
+            if (resize.width !== null) this.setColumnWidth(resize.th, resize.key, parseFloat(resize.original) || resize.start);
         },
         endColumnResize() {
             if (!this.colResize) return;

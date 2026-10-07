@@ -106,11 +106,6 @@ final class SheetEditor
 
                         continue;
                     }
-                    if (Digits::normalizeInteger($value) === false) {
-                        $result['errors'][] = $key + ['message' => ColumnType::INTEGER_ONLY];
-
-                        continue;
-                    }
                     if (($rangeError = $column->rangeError($value)) !== null) {
                         $result['errors'][] = $key + ['message' => $rangeError];
 
@@ -126,6 +121,13 @@ final class SheetEditor
 
                 if ($cell?->value === $value || (! $cell && $value === null)) {
                     $result['saved'][] = $key + ['value' => $value, 'version' => $currentVersion];
+
+                    continue;
+                }
+
+                // Whole numbers only; a value with a fraction saved before this rule may stay as it is (above).
+                if ($column->isNumber() && Digits::normalizeInteger($value) === false) {
+                    $result['errors'][] = $key + ['message' => ColumnType::INTEGER_ONLY];
 
                     continue;
                 }
@@ -442,7 +444,7 @@ final class SheetEditor
     {
         $this->authorizeManage($user);
         $sheet = $column->sheet;
-        [$title, $type, $min, $max] = $this->validateColumn($sheet, $title, $type, $min, $max, $column->id);
+        [$title, $type, $min, $max] = $this->validateColumn($sheet, $title, $type, $min, $max, $column);
 
         $changesSignedData = $title !== $column->title || $type !== $column->type->value;
         if ($changesSignedData) {
@@ -581,23 +583,28 @@ final class SheetEditor
         $this->log->record($sheet->id, $user, 'sheet.deadline', null, null, $old, $deadline->toDateTimeString());
     }
 
-    /** @return array{0:string,1:string,2:string|null,3:string|null} */
-    private function validateColumn(Sheet $sheet, string $title, string $type, ?string $min, ?string $max, ?int $ignoreId = null): array
+    /**
+     * @param  SheetColumn|null  $current  the column being edited (null for a new one)
+     * @return array{0:string,1:string,2:string|null,3:string|null}
+     */
+    private function validateColumn(Sheet $sheet, string $title, string $type, ?string $min, ?string $max, ?SheetColumn $current = null): array
     {
         $title = trim(preg_replace('/\s+/u', ' ', $title) ?? '');
         $errors = [];
         if ($title === '' || mb_strlen($title) > 80) {
             $errors['columnTitle'] = 'عنوان ستون الزامی است (حداکثر ۸۰ کاراکتر).';
-        } elseif (SheetColumn::where('sheet_id', $sheet->id)->where('title', $title)->when($ignoreId, fn ($q) => $q->whereKeyNot($ignoreId))->exists()) {
+        } elseif (SheetColumn::where('sheet_id', $sheet->id)->where('title', $title)->when($current, fn ($q) => $q->whereKeyNot($current->id))->exists()) {
             $errors['columnTitle'] = 'ستونی با این عنوان وجود دارد.';
         }
         if (ColumnType::tryFrom($type) === null) {
             $errors['columnType'] = 'نوع ستون معتبر نیست.';
         }
 
-        // A range only makes sense for numbers; switching to text drops it. Number columns hold whole numbers.
-        $min = $type === ColumnType::Number->value ? Digits::normalizeInteger($min) : null;
-        $max = $type === ColumnType::Number->value ? Digits::normalizeInteger($max) : null;
+        // A range only makes sense for numbers; switching to text drops it. Number columns hold whole numbers,
+        // but a bound with a fraction saved before that rule may stay while other settings of the column change.
+        $bound = fn (?string $value, ?string $saved) => Digits::normalizeNumber($value) === $saved && $saved !== null ? $saved : Digits::normalizeInteger($value);
+        $min = $type === ColumnType::Number->value ? $bound($min, $current?->min_value) : null;
+        $max = $type === ColumnType::Number->value ? $bound($max, $current?->max_value) : null;
         if ($min === false || (is_string($min) && strlen($min) > 40)) {
             $errors['columnMin'] = 'حداقل را به شکل عدد صحیح (بدون اعشار) وارد کنید یا خالی بگذارید.';
         }

@@ -97,10 +97,18 @@ class ColumnRangeTest extends TestCase
         }
         $this->assertSame('10', $this->editorService->addColumn($this->manager, $this->sheet, 'سقف', 'number', false, null, '10.0')->max_value);
 
-        // A range saved before (with a fraction) keeps working as it was.
+        // A range saved before (with a fraction) keeps working, and the column's other settings can still change.
         $old = SheetColumn::create(['sheet_id' => $this->sheet->id, 'title' => 'قدیمی', 'type' => 'number', 'min_value' => '-2.5', 'position' => 9]);
         $this->assertTrue($old->isOutOfRange('-3'));
         $this->assertFalse($old->isOutOfRange('-2'));
+        $this->editorService->updateColumn($this->manager, $old, 'قدیمی', 'number', true, '-2.5', null);
+        $this->assertSame(['-2.5', true], [$old->fresh()->min_value, $old->fresh()->is_locked]);
+        try {
+            $this->editorService->updateColumn($this->manager, $old->fresh(), 'قدیمی', 'number', true, '-1.5', null);
+            $this->fail('A new fractional minimum should be refused.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('columnMin', $e->errors());
+        }
     }
 
     public function test_narrowing_a_range_keeps_existing_values_and_counts_them(): void

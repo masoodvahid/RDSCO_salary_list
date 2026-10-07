@@ -129,6 +129,15 @@ final class PersonnelImporter
         $existingRows = SheetRow::where('sheet_id', $sheet->id)->get()->keyBy('national_code');
         $monthProjects = $sheetProjects->pluck('project.name')->sort()->values();
 
+        // Values with a fraction saved before number columns took whole numbers only: sending one back unchanged
+        // (export, fill, import) is not an error.
+        $storedFractions = SheetCell::query()
+            ->whereIn('row_id', $existingRows->pluck('id'))
+            ->whereIn('column_id', $columnByTitle->pluck('id'))
+            ->where('value', 'like', '%.%')
+            ->get(['row_id', 'column_id', 'value'])
+            ->mapWithKeys(fn (SheetCell $cell) => [$cell->row_id.':'.$cell->column_id => $cell->value]);
+
         // Type of each column that will be created: number unless a value is not numeric.
         $newColumnTypes = [];
         foreach ($extraColumns as $index => $title) {
@@ -204,7 +213,8 @@ final class PersonnelImporter
             $values = [];
             foreach ($extraColumns as $index => $title) {
                 $column = $columnByTitle->get(self::normalizeHeader($title));
-                [$value, $problem] = $this->parseValue(trim((string) ($line[$index] ?? '')), $column?->type ?? $newColumnTypes[$index], $column, $title, $index);
+                $stored = $existing && $column ? $storedFractions->get($existing->id.':'.$column->id) : null;
+                [$value, $problem] = $this->parseValue(trim((string) ($line[$index] ?? '')), $column?->type ?? $newColumnTypes[$index], $column, $title, $index, $stored);
                 if ($problem !== null) {
                     $problems[] = $problem;
 
@@ -227,6 +237,14 @@ final class PersonnelImporter
 
         if ($errors !== []) {
             $this->fail($errors, $total);
+        }
+
+        // Every column is part of each signed list of the month (ApprovalService::dataHash), as in SheetEditor::addColumn.
+        if ($newColumnTypes !== [] && SheetProject::where('sheet_id', $sheet->id)->whereIn('stage', Stage::lockedValues())->exists()) {
+            throw ValidationException::withMessages(['importFile' => [
+                'لیست حقوق این ماه پروژه‌ی قفل‌شده (تایید مدیرعامل یا نهایی) دارد؛ ستون جدید ساخته نمی‌شود.',
+                'این عنوان‌ها در لیست حقوق این ماه نیستند: '.self::quoteList(array_values(array_intersect_key($extraColumns, $newColumnTypes))).'. آن‌ها را از فایل حذف کنید یا عنوانشان را مثل ستون‌های موجود بنویسید.',
+            ]]);
         }
 
         return DB::transaction(function () use ($user, $sheet, $parsed, $extraColumns, $columnByTitle, $newColumnTypes, $existingRows) {
@@ -392,7 +410,7 @@ final class PersonnelImporter
                     $rowValues = null;
                     break;
                 }
-                [$value, $problem] = $this->parseValue(trim((string) ($line[$index] ?? '')), $column->type, $column, $column->title, $index);
+                [$value, $problem] = $this->parseValue(trim((string) ($line[$index] ?? '')), $column->type, $column, $column->title, $index, $cells->get($row->id.':'.$column->id)?->value);
                 if ($problem !== null) {
                     $problems[] = $problem;
 
@@ -562,8 +580,11 @@ final class PersonnelImporter
         return ['map' => $map, 'extra' => $extra];
     }
 
-    /** @return array{0: string|null, 1: string|null} [stored value, problem] */
-    private function parseValue(string $raw, ColumnType $type, ?SheetColumn $column, string $title, int $index): array
+    /**
+     * @param  string|null  $stored  the cell's current value, when the person and the column already exist
+     * @return array{0: string|null, 1: string|null} [stored value, problem]
+     */
+    private function parseValue(string $raw, ColumnType $type, ?SheetColumn $column, string $title, int $index, ?string $stored = null): array
     {
         $ref = 'ستون '.self::columnLetter($index)." «{$title}»";
 
@@ -572,8 +593,10 @@ final class PersonnelImporter
             if ($value === false) {
                 return [null, "{$ref}: «{$raw}» عدد نیست"];
             }
-            if (Digits::normalizeInteger($value) === false) {
-                return [null, "{$ref}: «{$raw}» عدد صحیح نیست؛ اعشار مجاز نیست"];
+            // Whole numbers only; a value with a fraction saved before this rule may come back unchanged.
+            if (Digits::normalizeInteger($value) === false && $value !== $stored) {
+                return [null, "{$ref}: «{$raw}» عدد صحیح نیست؛ اعشار مجاز نیست"
+                    .($column ? '' : ' (اگر این ستون باید اعشار داشته باشد، اول آن را در لیست حقوق با نوع «متن» بسازید)')];
             }
             if ($column?->isOutOfRange($value)) {
                 return [null, "{$ref}: ".Digits::money($value)." مجاز نیست؛ باید {$column->rangeLabel()} باشد"];

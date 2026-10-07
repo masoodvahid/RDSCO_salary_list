@@ -91,6 +91,13 @@ class SaveCellsTest extends TestCase
         $this->assertSame('7.5', SheetCell::where('row_id', $other->id)->value('value'));
         $this->assertSame('12.5', SheetCell::where('row_id', $this->rowA->id)->where('column_id', $this->textColumn->id)->value('value'));
 
+        // Sent back unchanged (a paste or a fill of the same value), it is not an error.
+        $result = $this->editorService->saveCells($editor, $this->sheet, [
+            ['row' => $other->id, 'column' => $this->openColumn->id, 'value' => '۷٫۵', 'version' => 1],
+        ]);
+        $this->assertSame([], $result['errors']);
+        $this->assertSame([1], array_column($result['saved'], 'version'));
+
         // A whole number written with zero decimals is just that number.
         $result = $this->editorService->saveCells($editor, $this->sheet, [
             ['row' => $this->rowA->id, 'column' => $this->openColumn->id, 'value' => '1,500,000.00'],

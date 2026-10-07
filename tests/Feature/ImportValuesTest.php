@@ -92,6 +92,21 @@ class ImportValuesTest extends TestCase
         $this->assertSame(1, ChangeLog::where('action', 'sheet.import.values')->count());
     }
 
+    public function test_a_value_with_a_fraction_saved_before_may_come_back_unchanged(): void
+    {
+        SheetCell::create(['row_id' => $this->rowA->id, 'column_id' => $this->openColumn->id, 'value' => '7.5', 'version' => 1]);
+        $path = $this->csv([
+            ['کد ملی', 'اضافه‌کار', 'توضیحات'],
+            [$this->rowA->national_code, '۷٫۵', 'بررسی شد'],
+        ]);
+
+        $result = app(PersonnelImporter::class)->import($this->editor, $this->sheet, $path, 'csv');
+
+        $this->assertSame(1, $result['cells']);
+        $this->assertSame('7.5', $this->value($this->rowA, $this->openColumn));
+        $this->assertSame('بررسی شد', $this->value($this->rowA, $this->textColumn));
+    }
+
     public function test_an_invalid_value_saves_nothing_and_points_to_the_line(): void
     {
         $this->openColumn->update(['min_value' => '0', 'max_value' => '31']);

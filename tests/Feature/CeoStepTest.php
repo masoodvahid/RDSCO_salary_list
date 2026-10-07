@@ -134,11 +134,14 @@ class CeoStepTest extends TestCase
     {
         $this->sheetProject($this->projectA)->update(['stage' => Stage::CeoApproved]);
 
-        $html = Livewire::actingAs($this->manager)->test(Dashboard::class)->html();
+        $dashboard = Livewire::actingAs($this->manager)->test(Dashboard::class);
 
+        $counts = $dashboard->viewData('stageCounts');
+        $this->assertSame([0 => 1, 1 => 0, 2 => 0, 3 => 1, 4 => 0], $counts);
+        $html = $dashboard->html();
+        $this->assertSame(5, substr_count($html, '<li class="card relative overflow-hidden px-4 pt-4 pb-3.5">'));
         foreach (Stage::cases() as $stage) {
             $this->assertStringContainsString($stage->label(), $html);
         }
-        $this->assertStringContainsString('lg:grid-cols-5', $html);
     }
 }

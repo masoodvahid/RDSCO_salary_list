@@ -181,6 +181,60 @@ class ImportTest extends TestCase
         $this->assertSame('12', SheetCell::where('row_id', $this->rowA->id)->where('column_id', $this->openColumn->id)->value('value'));
     }
 
+    public function test_a_value_with_a_fraction_saved_before_comes_back_unchanged_but_a_new_one_is_refused(): void
+    {
+        // Saved before number columns took whole numbers only.
+        SheetCell::create(['row_id' => $this->rowA->id, 'column_id' => $this->openColumn->id, 'value' => '7.5', 'version' => 1]);
+        $path = app(SheetExporter::class)->toXlsx($this->manager, $this->sheet);
+
+        $result = app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'xlsx');
+        @unlink($path);
+        $this->assertSame(['mode' => 'full', 'created' => 0, 'updated' => 2, 'columns' => 0], $result);
+        $this->assertSame('7.5', SheetCell::where('row_id', $this->rowA->id)->where('column_id', $this->openColumn->id)->value('value'));
+
+        $path = $this->csv([
+            ['نام', 'نام خانوادگی', 'کد ملی', 'اضافه‌کار', 'ضریب'],
+            ['نفر', $this->rowA->last_name, $this->rowA->national_code, '7.25', '1.5'],
+            ['نفر', $this->rowB->last_name, $this->rowB->national_code, '3', '2'],
+        ]);
+        try {
+            app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'csv');
+            $this->fail('Import should fail.');
+        } catch (ValidationException $e) {
+            $line = $e->errors()['importRows'][0];
+            $this->assertStringContainsString('«اضافه‌کار»: «7.25» عدد صحیح نیست؛ اعشار مجاز نیست', $line);
+            // A new column says how to keep its fractions.
+            $this->assertStringContainsString('«ضریب»: «1.5» عدد صحیح نیست؛ اعشار مجاز نیست (اگر این ستون باید اعشار داشته باشد، اول آن را در لیست حقوق با نوع «متن» بسازید)', $line);
+        }
+        $this->assertSame('7.5', SheetCell::where('row_id', $this->rowA->id)->where('column_id', $this->openColumn->id)->value('value'));
+    }
+
+    public function test_no_new_column_while_a_list_of_the_month_is_locked(): void
+    {
+        $this->sheetProject($this->projectB)->update(['stage' => Stage::CeoApproved]);
+        $path = $this->csv([
+            ['نام', 'نام خانوادگی', 'کد ملی', 'اضافه‌کار', 'پاداش'],
+            ['نفر', $this->rowA->last_name, $this->rowA->national_code, '9', '500'],
+        ]);
+
+        try {
+            app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'csv');
+            $this->fail('Import should fail.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('ستون جدید ساخته نمی‌شود', $e->errors()['importFile'][0]);
+            $this->assertStringContainsString('«پاداش»', $e->errors()['importFile'][1]);
+        }
+        $this->assertFalse(SheetColumn::where('sheet_id', $this->sheet->id)->where('title', 'پاداش')->exists());
+
+        // Without the new column the same file goes in (the open project's person only).
+        $path = $this->csv([
+            ['نام', 'نام خانوادگی', 'کد ملی', 'اضافه‌کار'],
+            ['نفر', $this->rowA->last_name, $this->rowA->national_code, '9'],
+        ]);
+        app(PersonnelImporter::class)->import($this->manager, $this->sheet, $path, 'csv');
+        $this->assertSame('9', SheetCell::where('row_id', $this->rowA->id)->where('column_id', $this->openColumn->id)->value('value'));
+    }
+
     public function test_rows_of_a_locked_list_are_not_changed_by_the_import(): void
     {
         $path = $this->csv([

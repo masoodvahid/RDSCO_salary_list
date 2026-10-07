@@ -155,11 +155,7 @@
     border-spacing: 0;
     font-size: 13px;
     table-layout: fixed;
-    /*
-     * A definite width makes the fixed layout use exactly the header widths (the table is as wide as their
-     * sum, or the screen): with max-content a column could not be made narrower than its header text.
-     */
-    width: 1px;
+    width: max-content;
     min-width: 100%;
 }
 .sheet th,
@@ -421,7 +417,10 @@ html:not(.grid-windowed) .sheet > tbody > tr:nth-child(n + 62) {
     transition: background 1.2s;
 }
 
-/* Column widths (everyone; each user's own). The handle sits on the end edge of the header cell. */
+/*
+ * Column widths (everyone; each user's own). The handle sits on the end edge of the header cell. A set width
+ * works like before: the column still grows to fit its header and total, so it narrows only down to them.
+ */
 .col-resize {
     position: absolute;
     inset-block: 0;

@@ -134,24 +134,32 @@ class User extends Authenticatable
     /** @return array<string, int> widths the user dragged in the payroll grid: 'f:first_name' / 'c:<column title>' => px */
     public function gridWidths(): array
     {
-        $widths = $this->preferences['grid_widths'] ?? [];
+        $widths = [];
+        foreach ((array) ($this->preferences['grid_widths'] ?? []) as $pair) {
+            if (is_array($pair) && is_string($pair[0] ?? null) && is_int($pair[1] ?? null)) {
+                $widths[$pair[0]] = $pair[1];
+            }
+        }
 
-        return is_array($widths) ? array_filter($widths, 'is_int') : [];
+        return $widths;
     }
 
-    /** Remembers one grid column width, or forgets it (back to the default) with null. */
+    /**
+     * Remembers one grid column width, or forgets it (back to the default) with null. Kept as a list of
+     * [key, px] pairs, newest last: a JSON list keeps its order in MySQL, where object keys get sorted.
+     */
     public function rememberGridWidth(string $key, ?int $width): void
     {
         DB::transaction(function () use ($key, $width) {
             $locked = static::whereKey($this->id)->lockForUpdate()->firstOrFail();
             $preferences = is_array($locked->preferences) ? $locked->preferences : [];
-            $widths = is_array($preferences['grid_widths'] ?? null) ? $preferences['grid_widths'] : [];
+            $pairs = is_array($preferences['grid_widths'] ?? null) ? $preferences['grid_widths'] : [];
 
-            unset($widths[$key]); // re-added last, so it counts as the most recent
+            $pairs = array_values(array_filter($pairs, fn ($pair) => is_array($pair) && ($pair[0] ?? null) !== $key));
             if ($width !== null) {
-                $widths[$key] = $width;
+                $pairs[] = [$key, $width];
             }
-            $preferences['grid_widths'] = array_slice($widths, -self::MAX_GRID_WIDTHS, null, true);
+            $preferences['grid_widths'] = array_slice($pairs, -self::MAX_GRID_WIDTHS);
 
             $locked->forceFill(['preferences' => $preferences])->saveQuietly();
             $this->forceFill(['preferences' => $preferences])->syncOriginalAttribute('preferences');

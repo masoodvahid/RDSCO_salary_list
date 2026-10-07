@@ -29,9 +29,9 @@ $resize = fn (string $key) => '<span class="col-resize" data-col-resize="'.e($ke
 <th class="sticky-1 text-center" style="width:48px">#</th>
 @endif
 @foreach ($identityFields as $field => [$label, $sticky, $default, $isNum])
-<th id="h-{{ $field }}" class="{{ $sticky }} px-2" style="width:{{ $width('f:'.$field, $default) }}px" data-default-width="{{ $default }}"><span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">@unless ($isManager){!! $lock !!}@endunless <span class="truncate">{{ $label }}</span></span>{!! $resize($field) !!}</th>
+<th id="h-{{ $field }}" class="{{ $sticky }} px-2" style="width:{{ $width('f:'.$field, $default) }}px" data-default-width="{{ $default }}"><span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">@unless ($isManager){!! $lock !!}@endunless {{ $label }}</span>{!! $resize($field) !!}</th>
 @endforeach
-<th class="px-2" style="width:{{ $width('f:project', 140) }}px" data-default-width="140"><span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">@unless ($isManager){!! $lock !!}@endunless <span class="truncate">پروژه</span></span>{!! $resize('project') !!}</th>
+<th class="px-2" style="width:{{ $width('f:project', 140) }}px" data-default-width="140"><span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">@unless ($isManager){!! $lock !!}@endunless پروژه</span>{!! $resize('project') !!}</th>
 @foreach ($columns as $column)
 @php
 $headerHint = collect([$column->is_locked ? 'ستون قفل: فقط مدیر ویرایش می‌کند' : null, $column->hasRange() ? 'مقدار مجاز: '.$column->rangeLabel() : null])->filter()->implode(' — ');
