@@ -33,10 +33,16 @@ class UserFactory extends Factory
         return $this->state(['role' => Role::Editor])->inProjects($project, ...$more);
     }
 
-    /** No project = finance (final stage) approver. */
+    /** No project = the CEO (approves after HR). */
     public function approver(Project ...$projects): static
     {
         return $this->state(['role' => Role::Approver])->inProjects(...$projects);
+    }
+
+    /** The finance manager: final approval, after the CEO. */
+    public function finance(): static
+    {
+        return $this->state(['role' => Role::Finance]);
     }
 
     /** No project = sees every project. */

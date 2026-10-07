@@ -8,8 +8,9 @@
 
 /*
  * Design tokens.
- * Color carries meaning here: the four stage colors (draft → project → HR → final) run through
- * badges, filters, the dashboard and the brand mark. Everything else stays neutral and light.
+ * Color carries meaning here: the stage colors (draft → project → HR → CEO → final) run through
+ * badges, filters and the dashboard (the brand mark keeps its four bars). Everything else stays
+ * neutral and light.
  */
 @theme {
     --font-sans: 'Vazirmatn', ui-sans-serif, system-ui, Tahoma, sans-serif;
@@ -27,6 +28,7 @@
     --color-stage-draft: #f59e0b;
     --color-stage-project: #0ea5e9;
     --color-stage-hr: #7c5cf6;
+    --color-stage-ceo: #ec4899;
     --color-stage-final: #10b981;
 
     --radius-card: 14px;
@@ -203,7 +205,8 @@
 }
 .sheet .sticky-3 {
     position: sticky;
-    right: calc(var(--index-col) + 120px);
+    /* --w-first: width of the first-name column (the user may resize it), set on the table */
+    right: calc(var(--index-col) + var(--w-first, 120px));
     z-index: 2;
     box-shadow: -1px 0 0 var(--color-line-strong);
 }
@@ -412,6 +415,39 @@ html:not(.grid-windowed) .sheet > tbody > tr:nth-child(n + 62) {
 .sheet input.cell.is-reverted {
     background: #fef2f2;
     transition: background 1.2s;
+}
+
+/*
+ * Column widths (everyone; each user's own). The handle sits on the end edge of the header cell. A set width
+ * works like before: the column still grows to fit its header and total, so it narrows only down to them.
+ */
+.col-resize {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    width: 7px;
+    cursor: col-resize;
+    touch-action: none;
+}
+.col-resize::after {
+    content: '';
+    position: absolute;
+    inset-block: 9px;
+    inset-inline-end: 2px;
+    width: 2px;
+    border-radius: 1px;
+}
+.sheet thead th:hover .col-resize::after {
+    background: var(--color-line-strong);
+}
+.col-resize:hover::after,
+.col-resize.is-active::after {
+    background: var(--color-accent);
+}
+.is-resizing-column,
+.is-resizing-column * {
+    cursor: col-resize !important;
+    user-select: none;
 }
 
 /* Column reordering (managers). */

@@ -125,6 +125,13 @@ final class SheetEditor
                     continue;
                 }
 
+                // Whole numbers only; a value with a fraction saved before this rule may stay as it is (above).
+                if ($column->isNumber() && Digits::normalizeInteger($value) === false) {
+                    $result['errors'][] = $key + ['message' => ColumnType::INTEGER_ONLY];
+
+                    continue;
+                }
+
                 if ($clientVersion !== null && $clientVersion !== $currentVersion) {
                     $result['conflicts'][] = $key + [
                         'value' => $cell?->value,
@@ -261,8 +268,8 @@ final class SheetEditor
             $sheetProject = SheetProject::where('sheet_id', $sheet->id)->where('project_id', $projectId)->first();
             if (! $sheetProject) {
                 $errors['newRow.project_id'] = 'این پروژه در پروژه‌های این ماه نیست.';
-            } elseif ($sheetProject->stage === Stage::Final) {
-                $errors['newRow.project_id'] = 'لیست این پروژه نهایی شده است.';
+            } elseif ($sheetProject->stage->isLocked()) {
+                $errors['newRow.project_id'] = 'لیست این پروژه تایید مدیرعامل گرفته و قفل است.';
             }
         }
         if ($errors !== []) {
@@ -289,7 +296,7 @@ final class SheetEditor
     public function deleteRow(User $user, SheetRow $row): void
     {
         $this->authorizeManage($user);
-        $this->assertProjectNotFinal($row->sheet_id, $row->project_id);
+        $this->assertProjectNotLocked($row->sheet_id, $row->project_id);
 
         DB::transaction(function () use ($user, $row) {
             $this->log->record($row->sheet_id, $user, 'row.delete', $row->id, null, $row->fullName().' · '.$row->national_code);
@@ -299,7 +306,7 @@ final class SheetEditor
 
     /**
      * Deletes several rows at once (manager's multi-select). All or nothing: if any selected
-     * row belongs to a finalized project, nothing is deleted.
+     * row belongs to a locked list (CEO-approved or final), nothing is deleted.
      *
      * @param  list<int|string>  $rowIds
      * @return int number of deleted rows
@@ -308,11 +315,11 @@ final class SheetEditor
     {
         $this->authorizeManage($user);
         $rows = $this->selectedRows($sheet, $rowIds);
-        $final = $this->finalProjectIds($sheet->id);
+        $lockedProjects = $this->lockedProjectIds($sheet->id);
 
-        $locked = $rows->filter(fn (SheetRow $row) => in_array((int) $row->project_id, $final, true));
+        $locked = $rows->filter(fn (SheetRow $row) => in_array((int) $row->project_id, $lockedProjects, true));
         if ($locked->isNotEmpty()) {
-            throw ValidationException::withMessages(['rows' => Digits::toPersian($locked->count()).' ردیف انتخاب‌شده متعلق به لیست نهایی‌شده است و حذف نمی‌شود؛ آن‌ها را از انتخاب خارج کنید.']);
+            throw ValidationException::withMessages(['rows' => Digits::toPersian($locked->count()).' ردیف انتخاب‌شده متعلق به لیست قفل‌شده (تایید مدیرعامل یا نهایی) است و حذف نمی‌شود؛ آن‌ها را از انتخاب خارج کنید.']);
         }
 
         DB::transaction(function () use ($user, $sheet, $rows) {
@@ -338,15 +345,15 @@ final class SheetEditor
         if ($projectId !== null && ! SheetProject::where('sheet_id', $sheet->id)->where('project_id', $projectId)->exists()) {
             throw ValidationException::withMessages(['rows' => 'این پروژه در پروژه‌های این ماه نیست.']);
         }
-        if ($this->isFinal($sheet->id, $projectId)) {
-            throw ValidationException::withMessages(['rows' => 'لیست این پروژه نهایی شده است.']);
+        $lockedProjects = $this->lockedProjectIds($sheet->id);
+        if ($projectId !== null && in_array($projectId, $lockedProjects, true)) {
+            throw ValidationException::withMessages(['rows' => 'لیست این پروژه تایید مدیرعامل گرفته و قفل است.']);
         }
 
         $rows = $this->selectedRows($sheet, $rowIds);
-        $final = $this->finalProjectIds($sheet->id);
-        $locked = $rows->filter(fn (SheetRow $row) => in_array((int) $row->project_id, $final, true));
+        $locked = $rows->filter(fn (SheetRow $row) => in_array((int) $row->project_id, $lockedProjects, true));
         if ($locked->isNotEmpty()) {
-            throw ValidationException::withMessages(['rows' => Digits::toPersian($locked->count()).' ردیف انتخاب‌شده متعلق به لیست نهایی‌شده است و پروژه‌اش تغییر نمی‌کند.']);
+            throw ValidationException::withMessages(['rows' => Digits::toPersian($locked->count()).' ردیف انتخاب‌شده متعلق به لیست قفل‌شده (تایید مدیرعامل یا نهایی) است و پروژه‌اش تغییر نمی‌کند.']);
         }
 
         $names = Project::pluck('name', 'id');
@@ -380,15 +387,10 @@ final class SheetEditor
         return SheetRow::where('sheet_id', $sheet->id)->whereIn('id', $ids)->get();
     }
 
-    private function isFinal(int $sheetId, ?int $projectId): bool
+    /** @return list<int> projects of the sheet whose list is locked (CEO-approved or final) */
+    private function lockedProjectIds(int $sheetId): array
     {
-        return $projectId !== null && in_array($projectId, $this->finalProjectIds($sheetId), true);
-    }
-
-    /** @return list<int> */
-    private function finalProjectIds(int $sheetId): array
-    {
-        return SheetProject::where('sheet_id', $sheetId)->where('stage', Stage::Final->value)
+        return SheetProject::where('sheet_id', $sheetId)->whereIn('stage', Stage::lockedValues())
             ->pluck('project_id')->map(fn ($id) => (int) $id)->all();
     }
 
@@ -399,8 +401,8 @@ final class SheetEditor
         if ($projectId !== null && ! SheetProject::where('sheet_id', $row->sheet_id)->where('project_id', $projectId)->exists()) {
             throw ValidationException::withMessages(['project' => 'این پروژه در پروژه‌های این ماه نیست.']);
         }
-        $this->assertProjectNotFinal($row->sheet_id, $row->project_id);
-        $this->assertProjectNotFinal($row->sheet_id, $projectId);
+        $this->assertProjectNotLocked($row->sheet_id, $row->project_id);
+        $this->assertProjectNotLocked($row->sheet_id, $projectId);
 
         if ((int) $row->project_id === (int) $projectId) {
             return;
@@ -416,7 +418,7 @@ final class SheetEditor
     public function addColumn(User $user, Sheet $sheet, string $title, string $type, bool $locked, ?string $min = null, ?string $max = null): SheetColumn
     {
         $this->authorizeManage($user);
-        $this->assertNoFinalProjects($sheet);
+        $this->assertNoLockedProjects($sheet);
         [$title, $type, $min, $max] = $this->validateColumn($sheet, $title, $type, $min, $max);
 
         $column = SheetColumn::create([
@@ -442,18 +444,20 @@ final class SheetEditor
     {
         $this->authorizeManage($user);
         $sheet = $column->sheet;
-        [$title, $type, $min, $max] = $this->validateColumn($sheet, $title, $type, $min, $max, $column->id);
+        [$title, $type, $min, $max] = $this->validateColumn($sheet, $title, $type, $min, $max, $column);
 
         $changesSignedData = $title !== $column->title || $type !== $column->type->value;
         if ($changesSignedData) {
-            $this->assertNoFinalProjects($sheet);
+            $this->assertNoLockedProjects($sheet);
         }
 
         if ($type === ColumnType::Number->value && $column->type !== ColumnType::Number) {
-            $invalid = SheetCell::where('column_id', $column->id)->whereNotNull('value')->pluck('value')
-                ->contains(fn ($value) => Digits::normalizeNumber($value) === false);
-            if ($invalid) {
+            $values = SheetCell::where('column_id', $column->id)->whereNotNull('value')->pluck('value');
+            if ($values->contains(fn ($value) => Digits::normalizeNumber($value) === false)) {
                 throw ValidationException::withMessages(['columnType' => 'این ستون مقدار غیرعددی دارد و نمی‌تواند عددی شود.']);
+            }
+            if ($values->contains(fn ($value) => Digits::normalizeInteger($value) === false)) {
+                throw ValidationException::withMessages(['columnType' => 'این ستون مقدار اعشاری دارد و نمی‌تواند از نوع عدد صحیح شود.']);
             }
         }
 
@@ -579,28 +583,33 @@ final class SheetEditor
         $this->log->record($sheet->id, $user, 'sheet.deadline', null, null, $old, $deadline->toDateTimeString());
     }
 
-    /** @return array{0:string,1:string,2:string|null,3:string|null} */
-    private function validateColumn(Sheet $sheet, string $title, string $type, ?string $min, ?string $max, ?int $ignoreId = null): array
+    /**
+     * @param  SheetColumn|null  $current  the column being edited (null for a new one)
+     * @return array{0:string,1:string,2:string|null,3:string|null}
+     */
+    private function validateColumn(Sheet $sheet, string $title, string $type, ?string $min, ?string $max, ?SheetColumn $current = null): array
     {
         $title = trim(preg_replace('/\s+/u', ' ', $title) ?? '');
         $errors = [];
         if ($title === '' || mb_strlen($title) > 80) {
             $errors['columnTitle'] = 'عنوان ستون الزامی است (حداکثر ۸۰ کاراکتر).';
-        } elseif (SheetColumn::where('sheet_id', $sheet->id)->where('title', $title)->when($ignoreId, fn ($q) => $q->whereKeyNot($ignoreId))->exists()) {
+        } elseif (SheetColumn::where('sheet_id', $sheet->id)->where('title', $title)->when($current, fn ($q) => $q->whereKeyNot($current->id))->exists()) {
             $errors['columnTitle'] = 'ستونی با این عنوان وجود دارد.';
         }
         if (ColumnType::tryFrom($type) === null) {
             $errors['columnType'] = 'نوع ستون معتبر نیست.';
         }
 
-        // A range only makes sense for numbers; switching to text drops it.
-        $min = $type === ColumnType::Number->value ? Digits::normalizeNumber($min) : null;
-        $max = $type === ColumnType::Number->value ? Digits::normalizeNumber($max) : null;
+        // A range only makes sense for numbers; switching to text drops it. Number columns hold whole numbers,
+        // but a bound with a fraction saved before that rule may stay while other settings of the column change.
+        $bound = fn (?string $value, ?string $saved) => Digits::normalizeNumber($value) === $saved && $saved !== null ? $saved : Digits::normalizeInteger($value);
+        $min = $type === ColumnType::Number->value ? $bound($min, $current?->min_value) : null;
+        $max = $type === ColumnType::Number->value ? $bound($max, $current?->max_value) : null;
         if ($min === false || (is_string($min) && strlen($min) > 40)) {
-            $errors['columnMin'] = 'حداقل را به شکل عدد وارد کنید یا خالی بگذارید.';
+            $errors['columnMin'] = 'حداقل را به شکل عدد صحیح (بدون اعشار) وارد کنید یا خالی بگذارید.';
         }
         if ($max === false || (is_string($max) && strlen($max) > 40)) {
-            $errors['columnMax'] = 'حداکثر را به شکل عدد وارد کنید یا خالی بگذارید.';
+            $errors['columnMax'] = 'حداکثر را به شکل عدد صحیح (بدون اعشار) وارد کنید یا خالی بگذارید.';
         }
         if (is_string($min) && is_string($max) && ! isset($errors['columnMin']) && ! isset($errors['columnMax']) && Digits::compare($min, $max) > 0) {
             $errors['columnMax'] = 'حداکثر نباید از حداقل کمتر باشد.';
@@ -613,20 +622,21 @@ final class SheetEditor
         return [$title, $type, $min, $max];
     }
 
-    private function assertNoFinalProjects(Sheet $sheet): void
+    /** Columns are part of every signed list, so they freeze once any list of the month is locked. */
+    private function assertNoLockedProjects(Sheet $sheet): void
     {
-        if (SheetProject::where('sheet_id', $sheet->id)->where('stage', Stage::Final->value)->exists()) {
-            throw ValidationException::withMessages(['column' => 'لیست حقوق این ماه پروژه‌ی نهایی‌شده دارد؛ ساختار ستون‌ها قابل تغییر نیست.']);
+        if (SheetProject::where('sheet_id', $sheet->id)->whereIn('stage', Stage::lockedValues())->exists()) {
+            throw ValidationException::withMessages(['column' => 'لیست حقوق این ماه پروژه‌ی قفل‌شده (تایید مدیرعامل یا نهایی) دارد؛ ساختار ستون‌ها قابل تغییر نیست.']);
         }
     }
 
-    private function assertProjectNotFinal(int $sheetId, ?int $projectId): void
+    private function assertProjectNotLocked(int $sheetId, ?int $projectId): void
     {
         if ($projectId === null) {
             return;
         }
-        if (SheetProject::where('sheet_id', $sheetId)->where('project_id', $projectId)->where('stage', Stage::Final->value)->exists()) {
-            throw ValidationException::withMessages(['project' => 'لیست این پروژه نهایی شده و قابل تغییر نیست.']);
+        if (SheetProject::where('sheet_id', $sheetId)->where('project_id', $projectId)->whereIn('stage', Stage::lockedValues())->exists()) {
+            throw ValidationException::withMessages(['project' => 'لیست این پروژه تایید مدیرعامل گرفته و قفل است؛ قابل تغییر نیست.']);
         }
     }
 

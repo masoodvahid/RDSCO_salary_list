@@ -21,8 +21,13 @@ use Illuminate\Database\Eloquent\Builder;
  * Roles (each includes the one before it):
  *  - viewer:   see rows in scope, add notes
  *  - editor:   + edit unlocked cells of own projects while the project is in Draft and before the deadline
- *  - approver: + approve. Scoped to projects → project approval of each. All projects → finance (final) approval + record review
+ *  - approver: + approve. Scoped to projects → project approval of each. All projects → CEO approval + record review
+ *  - finance:  like an all-project approver, one step later: record review + the final approval, after the CEO
  *  - manager:  everything (structure, locked cells, rows, members, HR approval, record review, reopen)
+ *
+ * Approval chain: editor → project approver → manager (HR) → CEO (all-project approver) → finance (final).
+ * From the CEO's approval on, the list is locked for everyone (Stage::isLocked()); only a finance rejection
+ * sends it back.
  */
 final class SheetAccess
 {
@@ -97,7 +102,7 @@ final class SheetAccess
         $stage = $sheetProject?->stage ?? Stage::Draft;
 
         if ($user->role === Role::Manager) {
-            return $stage !== Stage::Final;
+            return ! $stage->isLocked();
         }
 
         if (! in_array($user->role, [Role::Editor, Role::Approver], true)) {
@@ -128,7 +133,7 @@ final class SheetAccess
 
     public function canEditIdentity(User $user, ?SheetProject $sheetProject): bool
     {
-        return $this->canManage($user) && ($sheetProject?->stage ?? Stage::Draft) !== Stage::Final;
+        return $this->canManage($user) && ! ($sheetProject?->stage ?? Stage::Draft)->isLocked();
     }
 
     /** Per-record approve/reject with a note. */
@@ -138,10 +143,12 @@ final class SheetAccess
             return false;
         }
         if ($user->role === Role::Manager) {
-            return $sheetProject->stage !== Stage::Final;
+            return ! $sheetProject->stage->isLocked();
         }
 
-        return $user->isGlobalApprover() && $sheetProject->stage === Stage::HrApproved;
+        // Each of the last two approvers reviews the records at their own step.
+        return ($user->isGlobalApprover() && $sheetProject->stage === Stage::HrApproved)
+            || ($user->isFinance() && $sheetProject->stage === Stage::CeoApproved);
     }
 
     /** The stage this user's approval would move the project to, or null when they cannot approve now. */
@@ -159,11 +166,17 @@ final class SheetAccess
                 && $stage === Stage::Draft => Stage::ProjectApproved,
             $user->role === Role::Manager
                 && in_array($stage, [Stage::Draft, Stage::ProjectApproved], true) => Stage::HrApproved,
-            $user->isGlobalApprover() && $stage === Stage::HrApproved => Stage::Final,
+            $user->isGlobalApprover() && $stage === Stage::HrApproved => Stage::CeoApproved,
+            $user->isFinance() && $stage === Stage::CeoApproved => Stage::Final,
             default => null,
         };
     }
 
+    /**
+     * HR takes a list back for correction until the CEO has signed it. After that only a finance rejection
+     * sends it back (lists the CEO signed before the finance step existed were final, and stay out of
+     * HR's reach as they were).
+     */
     public function canReopen(User $user, SheetProject $sheetProject): bool
     {
         return $this->canManage($user)

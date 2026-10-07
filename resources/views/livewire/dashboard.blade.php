@@ -88,8 +88,8 @@
             </p>
         </div>
     @else
-        {{-- The four stages are a real sequence, so they are numbered. --}}
-        <ol class="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="وضعیت لیست پروژه‌ها">
+        {{-- The stages are a real sequence, so they are numbered. --}}
+        <ol class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="وضعیت لیست پروژه‌ها">
             @foreach (Stage::cases() as $stage)
                 @php
                     $count = $stageCounts[$stage->value];

@@ -46,9 +46,10 @@ class BulkRowsTest extends TestCase
         $this->assertTrue(SheetRow::whereKey($this->rowA->id)->exists());
     }
 
-    public function test_rows_of_a_finalized_project_block_the_whole_delete(): void
+    public function test_rows_of_a_locked_project_block_the_whole_delete(): void
     {
-        $this->sheetProject($this->projectB)->update(['stage' => Stage::Final]);
+        // Locked from the CEO's approval on (Final included).
+        $this->sheetProject($this->projectB)->update(['stage' => Stage::CeoApproved]);
 
         try {
             app(SheetEditor::class)->deleteRows($this->manager, $this->sheet, [$this->rowA->id, $this->rowB->id]);
@@ -87,7 +88,7 @@ class BulkRowsTest extends TestCase
             ->assertReturned(true);
         $this->assertSame(3, SheetRow::whereIn('id', $ids)->whereNull('project_id')->count());
 
-        $this->sheetProject($this->projectA)->update(['stage' => Stage::Final]);
+        $this->sheetProject($this->projectA)->update(['stage' => Stage::CeoApproved]);
         $this->expectException(ValidationException::class);
         app(SheetEditor::class)->setRowsProject($this->manager, $this->sheet, $ids, $this->projectA->id);
     }

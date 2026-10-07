@@ -5,19 +5,22 @@
     path), each with a hash of its HTML so a re-render only touches rows that changed (sheet-grid.js).
     Icons come from the sprite in grid.blade.php; the project <select> of a row gets its full option list
     from #project-options on first use.
+    Column widths: each user's own (Grid::saveColumnWidth), dragged with the handle at the end of a header;
+    the first name's width also places the sticky last-name column (--w-first).
     Data: Grid::tableData().
 --}}
 @php
 use App\Enums\ColumnType;
-use App\Enums\Stage;
 use App\Support\Digits;
 $identityFields = ['first_name' => ['نام', 'sticky-2', 120, false], 'last_name' => ['نام خانوادگی', 'sticky-3', 140, false], 'personnel_code' => ['کد پرسنلی', '', 100, true], 'national_code' => ['کد ملی', '', 116, true]];
 $lock = '<svg class="size-3 shrink-0" aria-hidden="true"><use href="#i-lock"/></svg>';
+$width = fn (string $key, int $default) => $widths[$key] ?? $default;
+$resize = fn (string $key) => '<span class="col-resize" data-col-resize="'.e($key).'" title="برای تغییر عرض ستون بکشید (دوبار کلیک: عرض پیش‌فرض)" aria-hidden="true"></span>';
 @endphp
 @if ($isManager)
-<template id="project-options"><option value="">— انتخاب پروژه</option>@foreach ($sheetProjects as $sp)<option value="{{ $sp->project_id }}" @disabled($sp->stage === Stage::Final)>{{ $sp->project->name }}</option>@endforeach</template>
+<template id="project-options"><option value="">— انتخاب پروژه</option>@foreach ($sheetProjects as $sp)<option value="{{ $sp->project_id }}" @disabled($sp->stage->isLocked())>{{ $sp->project->name }}</option>@endforeach</template>
 @endif
-<table @class(['sheet', 'has-select' => $isManager])>
+<table @class(['sheet', 'has-select' => $isManager]) style="--w-first: {{ $width('f:first_name', 120) }}px">
 <thead>
 <tr>
 @if ($isManager)
@@ -25,20 +28,22 @@ $lock = '<svg class="size-3 shrink-0" aria-hidden="true"><use href="#i-lock"/></
 @else
 <th class="sticky-1 text-center" style="width:48px">#</th>
 @endif
-@foreach ($identityFields as $field => [$label, $sticky, $width, $isNum])
-<th id="h-{{ $field }}" class="{{ $sticky }} px-2" style="width:{{ $width }}px"><span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">@unless ($isManager){!! $lock !!}@endunless {{ $label }}</span></th>
+@foreach ($identityFields as $field => [$label, $sticky, $default, $isNum])
+<th id="h-{{ $field }}" class="{{ $sticky }} px-2" style="width:{{ $width('f:'.$field, $default) }}px" data-default-width="{{ $default }}"><span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">@unless ($isManager){!! $lock !!}@endunless {{ $label }}</span>{!! $resize($field) !!}</th>
 @endforeach
-<th class="px-2" style="width:140px"><span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">@unless ($isManager){!! $lock !!}@endunless پروژه</span></th>
+<th class="px-2" style="width:{{ $width('f:project', 140) }}px" data-default-width="140"><span class="flex items-center gap-1 {{ $isManager ? '' : 'text-ink-soft' }}">@unless ($isManager){!! $lock !!}@endunless پروژه</span>{!! $resize('project') !!}</th>
 @foreach ($columns as $column)
 @php
 $headerHint = collect([$column->is_locked ? 'ستون قفل: فقط مدیر ویرایش می‌کند' : null, $column->hasRange() ? 'مقدار مجاز: '.$column->rangeLabel() : null])->filter()->implode(' — ');
+$defaultWidth = $column->type === ColumnType::Text ? 180 : 130;
 @endphp
-<th id="h{{ $column->id }}" @class(['px-2', 'is-locked' => $column->is_locked]) style="width:{{ $column->type === ColumnType::Text ? 180 : 130 }}px" wire:key="col-{{ $column->id }}" title="{{ $headerHint }}" data-column-id="{{ $column->id }}" @if ($column->hasRange()) @if ($column->min_value !== null) data-min="{{ $column->min_value }}" @endif @if ($column->max_value !== null) data-max="{{ $column->max_value }}" @endif data-range-message="{{ $column->rangeMessage() }}" @endif>
+<th id="h{{ $column->id }}" @class(['px-2', 'is-locked' => $column->is_locked]) style="width:{{ $width('c:'.$column->title, $defaultWidth) }}px" data-default-width="{{ $defaultWidth }}" wire:key="col-{{ $column->id }}" title="{{ $headerHint }}" data-column-id="{{ $column->id }}" @if ($column->hasRange()) @if ($column->min_value !== null) data-min="{{ $column->min_value }}" @endif @if ($column->max_value !== null) data-max="{{ $column->max_value }}" @endif data-range-message="{{ $column->rangeMessage() }}" @endif>
 <div class="flex items-center justify-between gap-1">
 @if ($isManager)<span data-col-grip class="col-grip" title="برای جابه‌جایی ستون، بکشید"><svg class="size-3.5" aria-hidden="true"><use href="#i-grip"/></svg></span>@endif
 <span class="min-w-0 flex-1 leading-tight"><span class="flex items-center gap-1">@if ($column->is_locked){!! $lock !!}@endif<span class="truncate">{{ $column->title }}</span></span>@if ($column->hasRange())<span class="mt-0.5 block truncate text-[10.5px] font-normal opacity-70">{{ $column->rangeLabel() }}</span>@endif</span>
 @if ($isManager)<button type="button" x-on:click="$wire.openColumn({{ $column->id }})" class="shrink-0 rounded px-1 text-ink-soft/60 hover:bg-white hover:text-accent" aria-label="تنظیمات ستون {{ $column->title }}">▾</button>@endif
 </div>
+{!! $resize((string) $column->id) !!}
 </th>
 @endforeach
 <th class="px-2" style="width:{{ $showReview ? 96 : 104 }}px">بررسی</th>

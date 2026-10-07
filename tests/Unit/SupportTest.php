@@ -51,6 +51,17 @@ class SupportTest extends TestCase
         $this->assertSame('300000000.5', Digits::add('150000000.25', '150000000.25'));
     }
 
+    public function test_whole_numbers_for_number_columns(): void
+    {
+        $this->assertSame('1500000', Digits::normalizeInteger('۱٬۵۰۰٬۰۰۰'));
+        $this->assertSame('12', Digits::normalizeInteger('12.00'));
+        $this->assertSame('-3', Digits::normalizeInteger('-3٫0'));
+        $this->assertNull(Digits::normalizeInteger(''));
+        $this->assertFalse(Digits::normalizeInteger('12.5'));
+        $this->assertFalse(Digits::normalizeInteger('۰٫۱'));
+        $this->assertFalse(Digits::normalizeInteger('12a'));
+    }
+
     public function test_sums_match_chained_adds(): void
     {
         $values = ['150000000', '-25000000', null, '', '12.5', 'abc', '۱۲٬۰۰۰', '0.25', '999999999999999', '1234567890123456789'];

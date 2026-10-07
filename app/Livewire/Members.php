@@ -84,7 +84,7 @@ class Members extends Component
                 ->orWhere('job_title', 'like', "%{$search}%")
                 ->orWhere('mobile', 'like', '%'.Mobile::normalize($search).'%')))
             ->orderByDesc('is_active')
-            ->orderByRaw("case role when 'manager' then 0 when 'approver' then 1 when 'editor' then 2 else 3 end")
+            ->orderByRaw("case role when 'manager' then 0 when 'approver' then 1 when 'finance' then 2 when 'editor' then 3 else 4 end")
             ->orderBy('name')
             ->get();
     }
@@ -365,7 +365,8 @@ class Members extends Component
         if (! $role) {
             return [$roleValue, [], [$projectKey === 'projectIds' ? 'role' : 'editRole' => 'نقش معتبر نیست.']];
         }
-        if ($role === Role::Manager) {
+        // Both always work on every project.
+        if ($role === Role::Manager || $role === Role::Finance) {
             return [$role->value, [], []];
         }
 

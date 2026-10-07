@@ -7,9 +7,11 @@
  * - Fill handle: drag the small square at the corner of the active cell up or down to copy
  *   its value into that column (Ctrl+D copies the value of the cell above), like Excel.
  * - Validation before saving: a number column's range (data-min/data-max on its <th>) and
- *   number format are checked first; invalid input is never queued. The error shows under
- *   the cell; Enter keeps the cell for correction, leaving it restores the saved value.
+ *   number format (whole numbers only) are checked first; invalid input is never queued. The error
+ *   shows under the cell; Enter keeps the cell for correction, leaving it restores the saved value.
  * - Managers reorder columns by dragging the grip in the column header.
+ * - Everyone resizes columns with the handle at the end of a header (double-click: default width); the
+ *   width is the user's own and is saved for them ($wire.saveColumnWidth).
  * - Managers select rows (Shift+click for a run of rows) to delete them or set their project.
  * - Number cells show thousands separators; raw value while editing.
  * - Pulls other users' edits every few seconds via $wire.changesSince.
@@ -47,6 +49,7 @@ document.addEventListener('alpine:init', () => {
         fill: null, // active drag: { source, col, r0, r1, value, pointer, targets }
         bubble: null,
         colDrag: null, // active column drag: { grip, th, id, target, before, pointer, moved }
+        colResize: null, // active column resize: { handle, th, key, rtl, x, start, width, frame, unbind }
         selected: {}, // row id → true (manager multi-select)
         lastSelected: null, // anchor row for Shift+click
         win: null, // rendered rows window: { rows, top, bottom, start, end, rowH, bodyTop, scrollTop, viewH }
@@ -62,6 +65,12 @@ document.addEventListener('alpine:init', () => {
             root.addEventListener('pointerdown', (e) => {
                 const grip = e.target.closest && e.target.closest('[data-col-grip]');
                 if (grip) this.startColumnDrag(e, grip);
+                const handle = e.target.closest && e.target.closest('[data-col-resize]');
+                if (handle) this.startColumnResize(e, handle);
+            });
+            root.addEventListener('dblclick', (e) => {
+                const handle = e.target.closest && e.target.closest('[data-col-resize]');
+                if (handle) this.resetColumnWidth(handle);
             });
             // A Livewire re-render drops the handle (it is not in the server HTML); put it back.
             // It also brings the current structure signature, so the next poll does not refresh again.
@@ -119,6 +128,7 @@ document.addEventListener('alpine:init', () => {
             document.documentElement.classList.remove('grid-windowed');
             this.cancelFill();
             this.cancelColumnDrag();
+            this.cancelColumnResize();
             this.handle?.remove();
             this.bubble?.remove();
         },
@@ -218,6 +228,8 @@ document.addEventListener('alpine:init', () => {
             const value = this.raw(el);
             if (value === '') return null;
             if (!/^-?\d+(\.\d+)?$/.test(value)) return 'در این ستون فقط عدد وارد کنید.';
+            // Whole numbers only ("12.00" is still 12), as the server checks (Digits::normalizeInteger).
+            if (/\.\d*[1-9]/.test(value)) return 'در این ستون فقط عدد صحیح وارد کنید؛ اعشار مجاز نیست.';
             const rule = this.rule(el);
             const below = rule.min !== undefined && this.compare(value, rule.min) < 0;
             const above = rule.max !== undefined && this.compare(value, rule.max) > 0;
@@ -295,19 +307,21 @@ document.addEventListener('alpine:init', () => {
 
         /** Queues a cell for saving after validating it. Returns false when the input was refused. */
         queue(el) {
+            const value = this.raw(el);
+            const key = this.keyOf(el);
+            // Unchanged is never refused: values saved before a rule (a fraction, a range set later) may stay.
+            if (value === (el.dataset.saved ?? '')) {
+                this.clearError(el);
+                delete this.pending[key];
+                el.classList.remove('is-dirty');
+                return true;
+            }
             const error = this.validate(el);
             if (error) {
                 this.reject(el, error);
                 return false;
             }
             this.clearError(el);
-            const value = this.raw(el);
-            const key = this.keyOf(el);
-            if (value === (el.dataset.saved ?? '')) {
-                delete this.pending[key];
-                el.classList.remove('is-dirty');
-                return true;
-            }
             this.pending[key] = {
                 row: Number(el.dataset.row),
                 column: el.dataset.col ? Number(el.dataset.col) : null,
@@ -880,6 +894,100 @@ document.addEventListener('alpine:init', () => {
             });
             win.top.style.height = before * win.rowH + 'px';
             win.bottom.style.height = after * win.rowH + 'px';
+        },
+
+        // ------------------------------------------------------------ column widths (everyone)
+
+        startColumnResize(e, handle) {
+            const th = handle.closest('th');
+            if (!th || e.button > 0 || this.colResize || this.colDrag) return;
+            e.preventDefault();
+            e.stopPropagation();
+            handle.setPointerCapture(e.pointerId);
+            const move = (ev) => this.moveColumnResize(ev);
+            const up = () => this.endColumnResize();
+            const cancel = () => this.cancelColumnResize();
+            const key = (ev) => ev.key === 'Escape' && this.cancelColumnResize();
+            handle.addEventListener('pointermove', move);
+            handle.addEventListener('pointerup', up);
+            handle.addEventListener('pointercancel', cancel);
+            handle.addEventListener('lostpointercapture', up);
+            window.addEventListener('keydown', key);
+            // Columns are at least as wide as their content, and share out any room left when the table is narrower
+            // than the screen; start from what the user sees, or from the set width when that room is shared out.
+            const table = th.closest('table');
+            const stretched = table && table.offsetWidth <= (table.parentElement?.clientWidth || 0) + 1;
+            const shown = th.getBoundingClientRect().width;
+            this.colResize = {
+                handle,
+                th,
+                key: handle.dataset.colResize,
+                rtl: getComputedStyle(th).direction === 'rtl',
+                x: e.clientX,
+                start: Math.round(stretched ? parseFloat(th.style.width) || shown : shown),
+                original: th.style.width,
+                width: null,
+                frame: null,
+                unbind: () => {
+                    handle.removeEventListener('pointermove', move);
+                    handle.removeEventListener('pointerup', up);
+                    handle.removeEventListener('pointercancel', cancel);
+                    handle.removeEventListener('lostpointercapture', up);
+                    window.removeEventListener('keydown', key);
+                },
+            };
+            handle.classList.add('is-active');
+            document.documentElement.classList.add('is-resizing-column');
+        },
+        /** Same limits as Grid::saveColumnWidth: the sticky name columns stay narrower. */
+        clampColumnWidth(key, width) {
+            const max = key === 'first_name' || key === 'last_name' ? 320 : 600;
+            return Math.round(Math.min(max, Math.max(56, width)));
+        },
+        setColumnWidth(th, key, width) {
+            th.style.width = width + 'px';
+            // The sticky last-name column sits right after the first name.
+            if (key === 'first_name') th.closest('table')?.style.setProperty('--w-first', width + 'px');
+        },
+        moveColumnResize(e) {
+            const resize = this.colResize;
+            if (!resize) return;
+            // The handle is on the end edge: in RTL that is the left one, so dragging left widens.
+            const delta = resize.rtl ? resize.x - e.clientX : e.clientX - resize.x;
+            resize.width = this.clampColumnWidth(resize.key, resize.start + delta);
+            if (resize.frame) return;
+            resize.frame = requestAnimationFrame(() => {
+                resize.frame = null;
+                if (this.colResize === resize) this.setColumnWidth(resize.th, resize.key, resize.width);
+            });
+        },
+        clearColumnResize() {
+            const resize = this.colResize;
+            cancelAnimationFrame(resize.frame);
+            resize.unbind();
+            resize.handle.classList.remove('is-active');
+            document.documentElement.classList.remove('is-resizing-column');
+            this.colResize = null;
+            return resize;
+        },
+        cancelColumnResize() {
+            if (!this.colResize) return;
+            const resize = this.clearColumnResize();
+            if (resize.width !== null) this.setColumnWidth(resize.th, resize.key, parseFloat(resize.original) || resize.start);
+        },
+        endColumnResize() {
+            if (!this.colResize) return;
+            const resize = this.clearColumnResize();
+            if (resize.width === null || resize.width === resize.start) return;
+            this.setColumnWidth(resize.th, resize.key, resize.width);
+            this.$wire.saveColumnWidth(resize.key, resize.width);
+        },
+        resetColumnWidth(handle) {
+            const th = handle.closest('th');
+            const width = Number(th?.dataset.defaultWidth);
+            if (!th || !width) return;
+            this.setColumnWidth(th, handle.dataset.colResize, width);
+            this.$wire.saveColumnWidth(handle.dataset.colResize, null);
         },
 
         // ------------------------------------------------------------ column order (managers)

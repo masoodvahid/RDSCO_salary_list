@@ -25,12 +25,16 @@ class User extends Authenticatable
     /** Mirrors the column defaults so freshly created models match the database. */
     protected $attributes = ['role' => 'viewer', 'is_active' => true];
 
+    /** Column widths kept per user; the oldest go first, so the list stays small as columns change over the months. */
+    private const MAX_GRID_WIDTHS = 200;
+
     protected function casts(): array
     {
         return [
             'role' => Role::class,
             'is_active' => 'boolean',
             'last_login_at' => 'datetime',
+            'preferences' => 'array',
         ];
     }
 
@@ -90,16 +94,25 @@ class User extends Authenticatable
         return $this->role === Role::Manager;
     }
 
-    /** Approver without a project scope acts at the finance stage. */
+    /** Approver without a project scope: approves as the CEO, after HR. */
     public function isGlobalApprover(): bool
     {
         return $this->role === Role::Approver && $this->projectIds() === [];
     }
 
-    /** Managers, and approvers / viewers with no project, see every project. An editor always works within projects. */
+    /** The finance manager gives the final approval, after the CEO. */
+    public function isFinance(): bool
+    {
+        return $this->role === Role::Finance;
+    }
+
+    /**
+     * Managers and finance, and approvers / viewers with no project, see every project. An editor always
+     * works within projects.
+     */
     public function hasAllProjects(): bool
     {
-        return $this->isManager() || ($this->role !== Role::Editor && $this->projectIds() === []);
+        return $this->isManager() || $this->isFinance() || ($this->role !== Role::Editor && $this->projectIds() === []);
     }
 
     public function scopeLabel(): string
@@ -116,6 +129,41 @@ class User extends Authenticatable
         }
 
         return $names->take(2)->join('، ').' و '.Digits::toPersian($names->count() - 2).' پروژه‌ی دیگر';
+    }
+
+    /** @return array<string, int> widths the user dragged in the payroll grid: 'f:first_name' / 'c:<column title>' => px */
+    public function gridWidths(): array
+    {
+        $widths = [];
+        foreach ((array) ($this->preferences['grid_widths'] ?? []) as $pair) {
+            if (is_array($pair) && is_string($pair[0] ?? null) && is_int($pair[1] ?? null)) {
+                $widths[$pair[0]] = $pair[1];
+            }
+        }
+
+        return $widths;
+    }
+
+    /**
+     * Remembers one grid column width, or forgets it (back to the default) with null. Kept as a list of
+     * [key, px] pairs, newest last: a JSON list keeps its order in MySQL, where object keys get sorted.
+     */
+    public function rememberGridWidth(string $key, ?int $width): void
+    {
+        DB::transaction(function () use ($key, $width) {
+            $locked = static::whereKey($this->id)->lockForUpdate()->firstOrFail();
+            $preferences = is_array($locked->preferences) ? $locked->preferences : [];
+            $pairs = is_array($preferences['grid_widths'] ?? null) ? $preferences['grid_widths'] : [];
+
+            $pairs = array_values(array_filter($pairs, fn ($pair) => is_array($pair) && ($pair[0] ?? null) !== $key));
+            if ($width !== null) {
+                $pairs[] = [$key, $width];
+            }
+            $preferences['grid_widths'] = array_slice($pairs, -self::MAX_GRID_WIDTHS);
+
+            $locked->forceFill(['preferences' => $preferences])->saveQuietly();
+            $this->forceFill(['preferences' => $preferences])->syncOriginalAttribute('preferences');
+        });
     }
 
     /** "Name (job title)" for signatures and notes; just the name when no title is set. */

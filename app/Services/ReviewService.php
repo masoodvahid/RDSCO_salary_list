@@ -17,7 +17,7 @@ use Illuminate\Validation\ValidationException;
  * Per-record approve/reject with a note, and free notes on rows.
  *
  * A manager's rejection sends the project back to Draft (editors fix it);
- * a finance rejection sends it back to HR (ProjectApproved).
+ * a rejection by the CEO or finance sends it back to HR (ProjectApproved).
  */
 final class ReviewService
 {
@@ -43,6 +43,12 @@ final class ReviewService
         }
 
         DB::transaction(function () use ($user, $row, $status, $note, $sheetProject) {
+            // Checked again under a lock: an approval at the same moment (e.g. the final one) must not be undone.
+            $sheetProject = SheetProject::whereKey($sheetProject->id)->lockForUpdate()->firstOrFail();
+            if (! $this->access->canReview($user, $sheetProject)) {
+                throw new AuthorizationException('وضعیت این لیست همین حالا تغییر کرد. صفحه را تازه کنید.');
+            }
+
             $old = $row->review_status;
             $row->update([
                 'review_status' => $status,
@@ -64,10 +70,11 @@ final class ReviewService
                 'body' => mb_substr($note, 0, 2000),
             ]);
 
-            $sheetProject->refresh();
             if ($user->role === Role::Manager) {
                 $this->approvals->moveBack($user, $sheetProject, Stage::Draft, 'stage.return', 'رد رکورد توسط منابع انسانی');
             } elseif ($user->isGlobalApprover()) {
+                $this->approvals->moveBack($user, $sheetProject, Stage::ProjectApproved, 'stage.return', 'رد رکورد توسط مدیرعامل');
+            } elseif ($user->isFinance()) {
                 $this->approvals->moveBack($user, $sheetProject, Stage::ProjectApproved, 'stage.return', 'رد رکورد توسط مالی');
             }
         });

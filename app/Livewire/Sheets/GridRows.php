@@ -66,7 +66,7 @@ final class GridRows
                 'model' => $column,
                 'c' => 4 + $i,
                 'num' => $number ? ' num text-left' : '',
-                'mode' => $number ? ' inputmode="decimal"' : '',
+                'mode' => $number ? ' inputmode="numeric"' : '',
             ];
         }
     }
@@ -96,7 +96,7 @@ final class GridRows
         // # (with the selection checkbox for managers)
         if ($this->isManager) {
             $html = '<td id="n'.$rid.'" class="sticky-1 ro text-xs text-ink-soft"><label class="row-select"'
-                .($identityEditable ? '' : ' title="لیست این پروژه نهایی شده است"')
+                .($identityEditable ? '' : ' title="لیست این پروژه قفل است (تایید مدیرعامل یا نهایی)"')
                 .'><input type="checkbox" data-select-row="'.$rid.'"'.($identityEditable ? '' : ' disabled')
                 .' aria-label="انتخاب '.$name.'"><span>'.$number.'</span></label></td>';
         } else {

@@ -2,8 +2,8 @@
     Role scope picker: every project, or one or more projects.
     Expects: $prefix (id prefix), $scopeModel, $idsModel (Livewire property names), $role, $scope, $projects.
 --}}
-@if ($role === 'manager')
-    <p class="text-[13px] text-ink-soft">مدیر به همه پروژه‌ها دسترسی دارد.</p>
+@if ($role === 'manager' || $role === 'finance')
+    <p class="text-[13px] text-ink-soft">{{ $role === 'finance' ? 'مدیر مالی' : 'مدیر' }} به همه پروژه‌ها دسترسی دارد.</p>
 @else
     <fieldset>
         <legend class="label">محدوده دسترسی</legend>

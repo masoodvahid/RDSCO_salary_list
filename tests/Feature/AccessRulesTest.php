@@ -55,19 +55,48 @@ class AccessRulesTest extends TestCase
         $this->assertFalse($this->access->canEditCell($approver, $this->sheet, $this->rowA, $this->openColumn, $spA));
         $this->assertTrue($this->access->canEditCell($this->manager, $this->sheet, $this->rowA, $this->openColumn, $spA));
 
-        $spA->update(['stage' => Stage::Final]);
-        $this->assertFalse($this->access->canEditCell($this->manager, $this->sheet, $this->rowA, $this->openColumn, $spA));
+        $spA->update(['stage' => Stage::HrApproved]);
+        $this->assertTrue($this->access->canEditCell($this->manager, $this->sheet, $this->rowA, $this->openColumn, $spA));
+
+        // From the CEO's approval on, nobody edits (the old final stage, so lists that were final stay locked).
+        foreach ([Stage::CeoApproved, Stage::Final] as $stage) {
+            $spA->update(['stage' => $stage]);
+            $this->assertFalse($this->access->canEditCell($this->manager, $this->sheet, $this->rowA, $this->openColumn, $spA), $stage->name);
+            $this->assertFalse($this->access->canEditIdentity($this->manager, $spA), $stage->name);
+            $this->assertFalse($this->access->canReopen($this->manager, $spA), $stage->name);
+            $this->assertFalse($this->access->canReview($this->manager, $spA), $stage->name);
+        }
     }
 
-    public function test_viewers_and_finance_never_edit_values(): void
+    public function test_viewers_the_ceo_and_finance_never_edit_values(): void
     {
         $viewer = User::factory()->viewer()->create();
-        $finance = User::factory()->approver()->create();
+        $ceo = User::factory()->approver()->create();
+        $finance = User::factory()->finance()->create();
         $spA = $this->sheetProject($this->projectA);
 
-        $this->assertFalse($this->access->canEditCell($viewer, $this->sheet, $this->rowA, $this->openColumn, $spA));
-        $this->assertFalse($this->access->canEditCell($finance, $this->sheet, $this->rowA, $this->openColumn, $spA));
+        foreach ([$viewer, $ceo, $finance] as $user) {
+            $this->assertFalse($this->access->canEditCell($user, $this->sheet, $this->rowA, $this->openColumn, $spA));
+            $this->assertFalse($this->access->canEditIdentity($user, $spA));
+            $this->assertFalse($this->access->canImportValues($user, $this->sheet));
+            $this->assertFalse($this->access->canSubmit($user, $this->sheet, $spA));
+        }
         $this->assertTrue($this->access->canNote($viewer, $this->rowA));
+        $this->assertTrue($this->access->canNote($finance, $this->rowA));
+    }
+
+    public function test_finance_sees_every_project_and_is_not_the_ceo(): void
+    {
+        $finance = User::factory()->finance()->create();
+        // Even with a stray project row (not possible from the members page) the role decides the scope.
+        $finance->syncProjects([$this->projectA->id]);
+
+        $this->assertTrue($finance->isFinance());
+        $this->assertFalse($finance->isGlobalApprover());
+        $this->assertTrue($finance->hasAllProjects());
+        $this->assertSame('همه پروژه‌ها', $finance->scopeLabel());
+        $this->assertCount(2, $this->access->visibleRows($finance, $this->sheet)->get());
+        $this->assertNull($finance->projects()->first()->pivot->approver_key);
     }
 
     public function test_project_scoped_users_only_see_their_rows(): void
@@ -86,17 +115,27 @@ class AccessRulesTest extends TestCase
     {
         $approverA = User::factory()->approver($this->projectA)->create();
         $approverB = User::factory()->approver($this->projectB)->create();
-        $finance = User::factory()->approver()->create();
+        $ceo = User::factory()->approver()->create();
+        $finance = User::factory()->finance()->create();
         $spA = $this->sheetProject($this->projectA);
 
-        $this->assertSame(Stage::ProjectApproved, $this->access->approvalTarget($approverA, $spA));
-        $this->assertNull($this->access->approvalTarget($approverB, $spA));
-        $this->assertSame(Stage::HrApproved, $this->access->approvalTarget($this->manager, $spA));
-        $this->assertNull($this->access->approvalTarget($finance, $spA));
+        // stage => [who approves now and into which stage, who reviews records]
+        $chain = [
+            [Stage::Draft, [[$approverA, Stage::ProjectApproved], [$this->manager, Stage::HrApproved]], [$this->manager]],
+            [Stage::ProjectApproved, [[$this->manager, Stage::HrApproved]], [$this->manager]],
+            [Stage::HrApproved, [[$ceo, Stage::CeoApproved]], [$this->manager, $ceo]],
+            [Stage::CeoApproved, [[$finance, Stage::Final]], [$finance]],
+            [Stage::Final, [], []],
+        ];
+        $everyone = ['approverA' => $approverA, 'approverB' => $approverB, 'manager' => $this->manager, 'ceo' => $ceo, 'finance' => $finance];
 
-        $spA->update(['stage' => Stage::HrApproved]);
-        $this->assertSame(Stage::Final, $this->access->approvalTarget($finance, $spA));
-        $this->assertNull($this->access->approvalTarget($this->manager, $spA));
-        $this->assertTrue($this->access->canReview($finance, $spA));
+        foreach ($chain as [$stage, $approvers, $reviewers]) {
+            $spA->update(['stage' => $stage]);
+            foreach ($everyone as $name => $user) {
+                $expected = collect($approvers)->first(fn ($pair) => $pair[0]->is($user))[1] ?? null;
+                $this->assertSame($expected, $this->access->approvalTarget($user, $spA), "{$name} at {$stage->name}");
+                $this->assertSame(in_array($user, $reviewers, true), $this->access->canReview($user, $spA), "{$name} reviews at {$stage->name}");
+            }
+        }
     }
 }
