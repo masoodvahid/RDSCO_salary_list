@@ -18,11 +18,15 @@ use App\Support\NationalCode;
 use Carbon\CarbonInterface;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
  * All writes to a sheet's cells, rows and columns go through here.
+ *
+ * A change to a list that is already locked (CEO-approved or final; only the manager may still change it) is
+ * logged with afterApproval() meta, so it shows as made after approval.
  */
 final class SheetEditor
 {
@@ -161,7 +165,7 @@ final class SheetEditor
                     continue;
                 }
 
-                $this->log->record($sheet->id, $user, 'cell.update', $row->id, $column->id, $old, $value);
+                $this->log->record($sheet->id, $user, 'cell.update', $row->id, $column->id, $old, $value, $this->afterApproval([$sheetProject]));
                 $this->resetRejectedReview($user, $sheet, $row);
 
                 $result['saved'][] = $key + ['value' => $value, 'version' => $cell->version];
@@ -221,7 +225,7 @@ final class SheetEditor
         $old = $row->{$field};
         if ($old !== $stored) {
             $row->update([$field => $stored]);
-            $this->log->record($sheet->id, $user, 'row.update', $row->id, null, $old, $stored, ['field' => $field]);
+            $this->log->record($sheet->id, $user, 'row.update', $row->id, null, $old, $stored, ['field' => $field] + ($this->afterApproval([$sheetProject]) ?? []));
         }
 
         $result['saved'][] = $key + ['value' => $stored, 'version' => 0];
@@ -264,19 +268,15 @@ final class SheetEditor
         } elseif (SheetRow::where('sheet_id', $sheet->id)->where('national_code', $national)->exists()) {
             $errors['newRow.national_code'] = 'این کد ملی در لیست حقوق این ماه وجود دارد.';
         }
-        if ($projectId !== null) {
-            $sheetProject = SheetProject::where('sheet_id', $sheet->id)->where('project_id', $projectId)->first();
-            if (! $sheetProject) {
-                $errors['newRow.project_id'] = 'این پروژه در پروژه‌های این ماه نیست.';
-            } elseif ($sheetProject->stage->isLocked()) {
-                $errors['newRow.project_id'] = 'لیست این پروژه تایید مدیرعامل گرفته و قفل است.';
-            }
+        $sheetProject = $projectId !== null ? SheetProject::where('sheet_id', $sheet->id)->where('project_id', $projectId)->first() : null;
+        if ($projectId !== null && ! $sheetProject) {
+            $errors['newRow.project_id'] = 'این پروژه در پروژه‌های این ماه نیست.';
         }
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
 
-        return DB::transaction(function () use ($user, $sheet, $first, $last, $personnel, $national, $projectId) {
+        return DB::transaction(function () use ($user, $sheet, $first, $last, $personnel, $national, $projectId, $sheetProject) {
             $row = SheetRow::create([
                 'sheet_id' => $sheet->id,
                 'project_id' => $projectId,
@@ -287,7 +287,7 @@ final class SheetEditor
                 'position' => ((int) SheetRow::where('sheet_id', $sheet->id)->max('position')) + 1,
                 'review_status' => ReviewStatus::Pending,
             ]);
-            $this->log->record($sheet->id, $user, 'row.create', $row->id, null, null, $row->fullName());
+            $this->log->record($sheet->id, $user, 'row.create', $row->id, null, null, $row->fullName(), $this->afterApproval([$sheetProject]));
 
             return $row;
         });
@@ -296,17 +296,16 @@ final class SheetEditor
     public function deleteRow(User $user, SheetRow $row): void
     {
         $this->authorizeManage($user);
-        $this->assertProjectNotLocked($row->sheet_id, $row->project_id);
+        $meta = $this->afterApproval($this->sheetProjectsOf($row->sheet_id, [$row->project_id]));
 
-        DB::transaction(function () use ($user, $row) {
-            $this->log->record($row->sheet_id, $user, 'row.delete', $row->id, null, $row->fullName().' · '.$row->national_code);
+        DB::transaction(function () use ($user, $row, $meta) {
+            $this->log->record($row->sheet_id, $user, 'row.delete', $row->id, null, $row->fullName().' · '.$row->national_code, null, $meta);
             $row->delete();
         });
     }
 
     /**
-     * Deletes several rows at once (manager's multi-select). All or nothing: if any selected
-     * row belongs to a locked list (CEO-approved or final), nothing is deleted.
+     * Deletes several rows at once (manager's multi-select).
      *
      * @param  list<int|string>  $rowIds
      * @return int number of deleted rows
@@ -315,16 +314,12 @@ final class SheetEditor
     {
         $this->authorizeManage($user);
         $rows = $this->selectedRows($sheet, $rowIds);
-        $lockedProjects = $this->lockedProjectIds($sheet->id);
+        $sheetProjects = $this->sheetProjectsOf($sheet->id, $rows->pluck('project_id')->all());
 
-        $locked = $rows->filter(fn (SheetRow $row) => in_array((int) $row->project_id, $lockedProjects, true));
-        if ($locked->isNotEmpty()) {
-            throw ValidationException::withMessages(['rows' => Digits::toPersian($locked->count()).' ردیف انتخاب‌شده متعلق به لیست قفل‌شده (تایید مدیرعامل یا نهایی) است و حذف نمی‌شود؛ آن‌ها را از انتخاب خارج کنید.']);
-        }
-
-        DB::transaction(function () use ($user, $sheet, $rows) {
+        DB::transaction(function () use ($user, $sheet, $rows, $sheetProjects) {
             foreach ($rows as $row) {
-                $this->log->record($sheet->id, $user, 'row.delete', $row->id, null, $row->fullName().' · '.$row->national_code);
+                $meta = $this->afterApproval([$sheetProjects->get($row->project_id)]);
+                $this->log->record($sheet->id, $user, 'row.delete', $row->id, null, $row->fullName().' · '.$row->national_code, null, $meta);
             }
             SheetRow::whereIn('id', $rows->pluck('id'))->delete(); // cells and notes cascade
         });
@@ -345,27 +340,20 @@ final class SheetEditor
         if ($projectId !== null && ! SheetProject::where('sheet_id', $sheet->id)->where('project_id', $projectId)->exists()) {
             throw ValidationException::withMessages(['rows' => 'این پروژه در پروژه‌های این ماه نیست.']);
         }
-        $lockedProjects = $this->lockedProjectIds($sheet->id);
-        if ($projectId !== null && in_array($projectId, $lockedProjects, true)) {
-            throw ValidationException::withMessages(['rows' => 'لیست این پروژه تایید مدیرعامل گرفته و قفل است.']);
-        }
-
         $rows = $this->selectedRows($sheet, $rowIds);
-        $locked = $rows->filter(fn (SheetRow $row) => in_array((int) $row->project_id, $lockedProjects, true));
-        if ($locked->isNotEmpty()) {
-            throw ValidationException::withMessages(['rows' => Digits::toPersian($locked->count()).' ردیف انتخاب‌شده متعلق به لیست قفل‌شده (تایید مدیرعامل یا نهایی) است و پروژه‌اش تغییر نمی‌کند.']);
-        }
+        $sheetProjects = $this->sheetProjectsOf($sheet->id, [...$rows->pluck('project_id')->all(), $projectId]);
 
         $names = Project::pluck('name', 'id');
         $changed = 0;
-        DB::transaction(function () use ($user, $sheet, $rows, $projectId, $names, &$changed) {
+        DB::transaction(function () use ($user, $sheet, $rows, $projectId, $names, $sheetProjects, &$changed) {
             foreach ($rows as $row) {
                 if ((int) $row->project_id === (int) $projectId) {
                     continue;
                 }
                 $old = $row->project_id ? $names->get($row->project_id) : null;
+                $meta = $this->afterApproval([$sheetProjects->get($row->project_id), $sheetProjects->get($projectId)]);
                 $row->update(['project_id' => $projectId]);
-                $this->log->record($sheet->id, $user, 'row.project', $row->id, null, $old, $projectId ? $names->get($projectId) : null);
+                $this->log->record($sheet->id, $user, 'row.project', $row->id, null, $old, $projectId ? $names->get($projectId) : null, $meta);
                 $changed++;
             }
         });
@@ -374,7 +362,7 @@ final class SheetEditor
     }
 
     /** @param list<int|string> $rowIds */
-    private function selectedRows(Sheet $sheet, array $rowIds): \Illuminate\Support\Collection
+    private function selectedRows(Sheet $sheet, array $rowIds): Collection
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $rowIds))));
         if ($ids === []) {
@@ -387,11 +375,35 @@ final class SheetEditor
         return SheetRow::where('sheet_id', $sheet->id)->whereIn('id', $ids)->get();
     }
 
-    /** @return list<int> projects of the sheet whose list is locked (CEO-approved or final) */
-    private function lockedProjectIds(int $sheetId): array
+    /**
+     * Log meta for a change to lists that are already locked (CEO-approved or final): ['after_approval' => [project
+     * id => stage]], so the change log, the member's activity and the list's approval timeline show it as made
+     * after approval. Null when none of them is locked.
+     *
+     * @param  iterable<SheetProject|null>  $sheetProjects
+     * @return array{after_approval: array<int, int>}|null
+     */
+    public function afterApproval(iterable $sheetProjects): ?array
     {
-        return SheetProject::where('sheet_id', $sheetId)->whereIn('stage', Stage::lockedValues())
-            ->pluck('project_id')->map(fn ($id) => (int) $id)->all();
+        $locked = [];
+        foreach ($sheetProjects as $sheetProject) {
+            if ($sheetProject?->stage->isLocked()) {
+                $locked[(int) $sheetProject->project_id] = $sheetProject->stage->value;
+            }
+        }
+
+        return $locked === [] ? null : ['after_approval' => $locked];
+    }
+
+    /**
+     * @param  array<int|string|null>  $projectIds
+     * @return Collection<int, SheetProject> keyed by project id
+     */
+    private function sheetProjectsOf(int $sheetId, array $projectIds): Collection
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $projectIds))));
+
+        return $ids === [] ? collect() : SheetProject::where('sheet_id', $sheetId)->whereIn('project_id', $ids)->get()->keyBy('project_id');
     }
 
     public function setRowProject(User $user, SheetRow $row, ?int $projectId): void
@@ -401,24 +413,21 @@ final class SheetEditor
         if ($projectId !== null && ! SheetProject::where('sheet_id', $row->sheet_id)->where('project_id', $projectId)->exists()) {
             throw ValidationException::withMessages(['project' => 'این پروژه در پروژه‌های این ماه نیست.']);
         }
-        $this->assertProjectNotLocked($row->sheet_id, $row->project_id);
-        $this->assertProjectNotLocked($row->sheet_id, $projectId);
-
         if ((int) $row->project_id === (int) $projectId) {
             return;
         }
 
+        $meta = $this->afterApproval($this->sheetProjectsOf($row->sheet_id, [$row->project_id, $projectId]));
         $old = $row->project_id ? Project::find($row->project_id)?->name : null;
         $row->update(['project_id' => $projectId]);
         $new = $projectId ? Project::find($projectId)?->name : null;
-        $this->log->record($row->sheet_id, $user, 'row.project', $row->id, null, $old, $new);
+        $this->log->record($row->sheet_id, $user, 'row.project', $row->id, null, $old, $new, $meta);
     }
 
     /** $min / $max: optional bounds for number columns (Persian digits and separators accepted); empty = no limit. */
     public function addColumn(User $user, Sheet $sheet, string $title, string $type, bool $locked, ?string $min = null, ?string $max = null): SheetColumn
     {
         $this->authorizeManage($user);
-        $this->assertNoLockedProjects($sheet);
         [$title, $type, $min, $max] = $this->validateColumn($sheet, $title, $type, $min, $max);
 
         $column = SheetColumn::create([
@@ -430,7 +439,9 @@ final class SheetEditor
             'is_locked' => $locked,
             'position' => ((int) SheetColumn::where('sheet_id', $sheet->id)->max('position')) + 1,
         ]);
-        $this->log->record($sheet->id, $user, 'column.create', null, $column->id, null, $title, ['type' => $type, 'locked' => $locked, 'min' => $min, 'max' => $max]);
+        // A new column is part of every list of the month, the locked ones included.
+        $this->log->record($sheet->id, $user, 'column.create', null, $column->id, null, $title,
+            ['type' => $type, 'locked' => $locked, 'min' => $min, 'max' => $max] + ($this->afterApproval(SheetProject::where('sheet_id', $sheet->id)->get()) ?? []));
 
         return $column;
     }
@@ -446,11 +457,6 @@ final class SheetEditor
         $sheet = $column->sheet;
         [$title, $type, $min, $max] = $this->validateColumn($sheet, $title, $type, $min, $max, $column);
 
-        $changesSignedData = $title !== $column->title || $type !== $column->type->value;
-        if ($changesSignedData) {
-            $this->assertNoLockedProjects($sheet);
-        }
-
         if ($type === ColumnType::Number->value && $column->type !== ColumnType::Number) {
             $values = SheetCell::where('column_id', $column->id)->whereNotNull('value')->pluck('value');
             if ($values->contains(fn ($value) => Digits::normalizeNumber($value) === false)) {
@@ -464,7 +470,8 @@ final class SheetEditor
         $before = ['title' => $column->title, 'type' => $column->type->value, 'locked' => $column->is_locked, 'min' => $column->min_value, 'max' => $column->max_value];
         $after = ['title' => $title, 'type' => $type, 'locked' => $locked, 'min' => $min, 'max' => $max];
         $column->update(['title' => $title, 'type' => $type, 'is_locked' => $locked, 'min_value' => $min, 'max_value' => $max]);
-        $this->log->record($sheet->id, $user, 'column.update', null, $column->id, json_encode($before, JSON_UNESCAPED_UNICODE), json_encode($after, JSON_UNESCAPED_UNICODE));
+        $this->log->record($sheet->id, $user, 'column.update', null, $column->id, json_encode($before, JSON_UNESCAPED_UNICODE), json_encode($after, JSON_UNESCAPED_UNICODE),
+            $this->afterApproval(SheetProject::where('sheet_id', $sheet->id)->get()));
 
         if (! $column->hasRange()) {
             return 0;
@@ -620,24 +627,6 @@ final class SheetEditor
         }
 
         return [$title, $type, $min, $max];
-    }
-
-    /** Columns are part of every signed list, so they freeze once any list of the month is locked. */
-    private function assertNoLockedProjects(Sheet $sheet): void
-    {
-        if (SheetProject::where('sheet_id', $sheet->id)->whereIn('stage', Stage::lockedValues())->exists()) {
-            throw ValidationException::withMessages(['column' => 'لیست حقوق این ماه پروژه‌ی قفل‌شده (تایید مدیرعامل یا نهایی) دارد؛ ساختار ستون‌ها قابل تغییر نیست.']);
-        }
-    }
-
-    private function assertProjectNotLocked(int $sheetId, ?int $projectId): void
-    {
-        if ($projectId === null) {
-            return;
-        }
-        if (SheetProject::where('sheet_id', $sheetId)->where('project_id', $projectId)->whereIn('stage', Stage::lockedValues())->exists()) {
-            throw ValidationException::withMessages(['project' => 'لیست این پروژه تایید مدیرعامل گرفته و قفل است؛ قابل تغییر نیست.']);
-        }
     }
 
     private function authorizeManage(User $user): void

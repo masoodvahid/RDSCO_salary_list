@@ -200,14 +200,9 @@ final class PersonnelImporter
                 if (! $sheetProject) {
                     $problems[] = "پروژه «{$projectName}» در پروژه‌های این ماه نیست"
                         .($monthProjects->isEmpty() ? '' : ' (پروژه‌های این ماه: '.$monthProjects->take(12)->join('، ').')');
-                } elseif ($sheetProject->stage->isLocked()) {
-                    $problems[] = "لیست پروژه «{$projectName}» تایید مدیرعامل گرفته و قفل است";
                 } else {
                     $projectId = $sheetProject->project_id;
                 }
-            }
-            if ($existing?->project_id && $sheetProjectById->get($existing->project_id)?->stage->isLocked()) {
-                $problems[] = 'این نفر در لیست قفل‌شده‌ی پروژه «'.$sheetProjectById->get($existing->project_id)->project->name.'» (تایید مدیرعامل یا نهایی) است و قابل تغییر نیست';
             }
 
             $values = [];
@@ -239,16 +234,22 @@ final class PersonnelImporter
             $this->fail($errors, $total);
         }
 
-        // Every column is part of each signed list of the month (ApprovalService::dataHash), as in SheetEditor::addColumn.
-        if ($newColumnTypes !== [] && SheetProject::where('sheet_id', $sheet->id)->whereIn('stage', Stage::lockedValues())->exists()) {
-            throw ValidationException::withMessages(['importFile' => [
-                'لیست حقوق این ماه پروژه‌ی قفل‌شده (تایید مدیرعامل یا نهایی) دارد؛ ستون جدید ساخته نمی‌شود.',
-                'این عنوان‌ها در لیست حقوق این ماه نیستند: '.self::quoteList(array_values(array_intersect_key($extraColumns, $newColumnTypes))).'. آن‌ها را از فایل حذف کنید یا عنوانشان را مثل ستون‌های موجود بنویسید.',
-            ]]);
-        }
-
-        return DB::transaction(function () use ($user, $sheet, $parsed, $extraColumns, $columnByTitle, $newColumnTypes, $existingRows) {
+        return DB::transaction(function () use ($user, $sheet, $parsed, $extraColumns, $columnByTitle, $newColumnTypes, $existingRows, $sheetProjectById) {
             $created = $updated = 0;
+            // The import is logged as one line, except changes to lists that are already locked (CEO-approved or
+            // final): those are logged one by one, as made after approval (SheetEditor::afterApproval).
+            $audit = [];
+            $now = now();
+            $ip = app()->runningInConsole() ? null : request()->ip();
+            $log = function (string $action, ?int $rowId, ?int $columnId, ?string $old, ?string $new, array $meta) use (&$audit, $sheet, $user, $now, $ip) {
+                $audit[] = [
+                    'sheet_id' => $sheet->id, 'row_id' => $rowId, 'column_id' => $columnId, 'user_id' => $user->id,
+                    'action' => $action, 'old_value' => $old, 'new_value' => $new,
+                    'meta' => json_encode($meta + ['source' => 'import'], JSON_UNESCAPED_UNICODE), 'ip' => $ip, 'created_at' => $now,
+                ];
+            };
+            $monthLocked = $this->editor->afterApproval($sheetProjectById->values());
+            $listOf = fn (?int $projectId) => $projectId ? $sheetProjectById->get($projectId) : null;
 
             $columnIds = [];
             $position = (int) SheetColumn::where('sheet_id', $sheet->id)->max('position');
@@ -262,6 +263,9 @@ final class PersonnelImporter
                         'is_locked' => false,
                         'position' => ++$position,
                     ]);
+                    if ($monthLocked) {
+                        $log('column.create', null, $column->id, null, $column->title, ['type' => $column->type->value] + $monthLocked);
+                    }
                 }
                 $columnIds[$index] = $column->id;
             }
@@ -272,8 +276,8 @@ final class PersonnelImporter
                 ->whereIn('column_id', array_values($columnIds))
                 ->get()
                 ->keyBy(fn (SheetCell $cell) => $cell->row_id.':'.$cell->column_id);
-            $now = now();
             $inserts = [];
+            $projectNames = $sheetProjectById->map(fn (SheetProject $sp) => $sp->project->name);
 
             $rowPosition = (int) SheetRow::where('sheet_id', $sheet->id)->max('position');
             foreach ($parsed as $item) {
@@ -284,10 +288,22 @@ final class PersonnelImporter
                     'personnel_code' => $item['personnel'] !== null ? ($item['personnel'] === '' ? null : $item['personnel']) : $row?->personnel_code,
                     'project_id' => $item['projectId'] ?? $row?->project_id,
                 ];
+                $locked = $this->editor->afterApproval([$listOf($row?->project_id), $listOf($attributes['project_id'])]);
 
                 if ($row) {
+                    $before = $row->only(['first_name', 'last_name', 'personnel_code', 'project_id']);
                     $row->update($attributes);
                     $updated++;
+                    if ($locked) {
+                        foreach (['first_name', 'last_name', 'personnel_code'] as $field) {
+                            if ($before[$field] !== $row->{$field}) {
+                                $log('row.update', $row->id, null, $before[$field], $row->{$field}, ['field' => $field] + $locked);
+                            }
+                        }
+                        if ((int) $before['project_id'] !== (int) $row->project_id) {
+                            $log('row.project', $row->id, null, $projectNames->get($before['project_id']), $projectNames->get($row->project_id), $locked);
+                        }
+                    }
                 } else {
                     $row = SheetRow::create($attributes + [
                         'sheet_id' => $sheet->id,
@@ -296,21 +312,33 @@ final class PersonnelImporter
                         'review_status' => ReviewStatus::Pending,
                     ]);
                     $created++;
+                    if ($locked) {
+                        $log('row.create', $row->id, null, null, $row->fullName(), $locked);
+                    }
                 }
 
                 foreach ($item['values'] as $index => $value) {
                     $cell = $current->get($row->id.':'.$columnIds[$index]);
                     if ($cell) {
                         if ($cell->value !== $value) {
+                            if ($locked) {
+                                $log('cell.update', $row->id, $columnIds[$index], $cell->value, $value, $locked);
+                            }
                             $cell->update(['value' => $value, 'version' => $cell->version + 1, 'updated_by' => $user->id]);
                         }
                     } elseif ($value !== null) {
                         $inserts[] = ['row_id' => $row->id, 'column_id' => $columnIds[$index], 'value' => $value, 'version' => 1, 'updated_by' => $user->id, 'created_at' => $now, 'updated_at' => $now];
+                        if ($locked) {
+                            $log('cell.update', $row->id, $columnIds[$index], null, $value, $locked);
+                        }
                     }
                 }
             }
             foreach (array_chunk($inserts, 500) as $chunk) {
                 SheetCell::insert($chunk);
+            }
+            foreach (array_chunk($audit, 500) as $chunk) {
+                ChangeLog::insert($chunk);
             }
 
             $newColumns = count(array_filter($newColumnTypes));

@@ -61,8 +61,13 @@ final class UserActivity
         if ($filter !== 'account') {
             $changes = ChangeLog::query()
                 ->where('user_id', $member->id)
-                // Cells written by an Excel import are summed up by its own "sheet.import.values" line.
-                ->whereNot(fn ($q) => $q->where('action', 'cell.update')->whereNotNull('meta'))
+                // Cells written by an Excel import are summed up by its own import line, except changes to a list
+                // that was already approved: those are listed one by one.
+                // (Written without NOT: a JSON lookup on an empty meta is NULL, which NOT would turn into "skip".)
+                ->where(fn ($q) => $q->where('action', '!=', 'cell.update')
+                    ->orWhereNull('meta')
+                    ->orWhereNull('meta->source')
+                    ->orWhereNotNull('meta->after_approval'))
                 ->latest('id')
                 ->limit($limit + 1)
                 ->get();
@@ -123,8 +128,12 @@ final class UserActivity
 
     // ------------------------------------------------------------------ work inside payroll lists
 
-    /** @param Collection<int, ChangeLog> $changes */
-    private function describeChanges(Collection $changes): Collection
+    /**
+     * Readable lines for list changes (also used for the approval timeline of a list). Keys are kept.
+     *
+     * @param  Collection<int, ChangeLog>  $changes
+     */
+    public function describeChanges(Collection $changes): Collection
     {
         $rows = SheetRow::whereIn('id', $changes->pluck('row_id')->filter()->unique())->get(['id', 'first_name', 'last_name'])->keyBy('id');
         $columns = SheetColumn::whereIn('id', $changes->pluck('column_id')->filter()->unique())->get(['id', 'title', 'type'])->keyBy('id');
@@ -168,16 +177,37 @@ final class UserActivity
                 default => ['bg-zinc-300', $log->action, null],
             };
 
+            // A change to a list that was already approved (only the manager may still make one).
+            $after = self::afterApproval($log);
+
             return [
                 'at' => $log->created_at,
                 'kind' => 'lists',
-                'tone' => $tone,
+                'tone' => $after ? 'bg-orange-500' : $tone,
                 'text' => $text,
-                'context' => ($sheet = $sheets->get($log->sheet_id)) ? 'لیست حقوق '.$sheet->title() : null,
+                'context' => collect([
+                    ($sheet = $sheets->get($log->sheet_id)) ? 'لیست حقوق '.$sheet->title() : null,
+                    $after ? 'بعد از «'.$after->label().'»' : null,
+                ])->filter()->join(' · ') ?: null,
                 'detail' => $detail,
                 'title' => null,
             ];
         });
+    }
+
+    /**
+     * The latest approval a change came after, when it was made to an approved (locked) list: the meta written by
+     * SheetEditor::afterApproval(). With $projectId, only when that project's list was among them.
+     */
+    public static function afterApproval(ChangeLog $log, ?int $projectId = null): ?Stage
+    {
+        $locked = $log->meta['after_approval'] ?? null;
+        if (! is_array($locked) || $locked === []) {
+            return null;
+        }
+        $stage = $projectId === null ? max($locked) : ($locked[$projectId] ?? null);
+
+        return $stage === null ? null : Stage::tryFrom((int) $stage);
     }
 
     /** "old ← new" (reads right to left), blanks spelled out; amounts grouped when $number. */

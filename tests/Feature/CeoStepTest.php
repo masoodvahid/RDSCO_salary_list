@@ -8,19 +8,16 @@ use App\Livewire\Dashboard;
 use App\Livewire\Members;
 use App\Livewire\Sheets\Grid;
 use App\Models\Project;
-use App\Models\SheetCell;
 use App\Models\User;
-use App\Services\SheetEditor;
-use App\Services\SheetLifecycle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\Support\BuildsSheets;
 use Tests\TestCase;
 
 /**
  * The CEO's approval sits where the final approval used to be (stage 3) and finance approves after it (4).
- * From the CEO's approval on, a list is locked exactly as a final list was before.
+ * From the CEO's approval on, a list is locked as a final list was before, except for the manager (HR): see
+ * ManagerEditsAfterApprovalTest.
  */
 class CeoStepTest extends TestCase
 {
@@ -42,48 +39,7 @@ class CeoStepTest extends TestCase
         $this->assertFalse(Stage::HrApproved->isLocked());
     }
 
-    /** @param  callable(): mixed  $attempt */
-    private function assertRefused(callable $attempt, string $what, ?string $message = null): void
-    {
-        try {
-            $attempt();
-            $this->fail("{$what} should be refused.");
-        } catch (ValidationException $e) {
-            if ($message !== null) {
-                $this->assertStringContainsString($message, collect($e->errors())->flatten()->join(' '), $what);
-            }
-        }
-    }
-
-    public function test_a_ceo_approved_list_is_locked_for_the_manager(): void
-    {
-        $this->sheetProject($this->projectA)->update(['stage' => Stage::CeoApproved]);
-        $editor = app(SheetEditor::class);
-
-        $this->assertRefused(fn () => $editor->addRow($this->manager, $this->sheet, [
-            'first_name' => 'سارا', 'last_name' => 'نوری', 'national_code' => $this->validNationalCode(), 'project_id' => $this->projectA->id,
-        ]), 'Adding a person', 'تایید مدیرعامل گرفته و قفل است');
-        $this->assertRefused(fn () => $editor->deleteRow($this->manager, $this->rowA), 'Deleting a person');
-        $this->assertRefused(fn () => $editor->setRowProject($this->manager, $this->rowB, $this->projectA->id), 'Moving a person in');
-        $this->assertRefused(fn () => $editor->setRowProject($this->manager, $this->rowA, $this->projectB->id), 'Moving a person out');
-        $this->assertRefused(fn () => $editor->addColumn($this->manager, $this->sheet, 'پاداش', 'number', false), 'Adding a column', 'پروژه‌ی قفل‌شده');
-        $this->assertRefused(fn () => $editor->updateColumn($this->manager, $this->openColumn, 'اضافه‌کار ساعتی', 'number', false), 'Renaming a column');
-
-        $result = $editor->saveCells($this->manager, $this->sheet, [
-            ['row' => $this->rowA->id, 'column' => $this->lockedColumn->id, 'value' => '5'],
-            ['row' => $this->rowA->id, 'field' => 'last_name', 'value' => 'تازه'],
-        ]);
-        $this->assertCount(2, $result['denied']);
-        $this->assertSame(0, SheetCell::where('row_id', $this->rowA->id)->count());
-
-        $this->assertStringContainsString('پروژه‌ی قفل‌شده (تایید مدیرعامل یا نهایی)', app(SheetLifecycle::class)->moveBlocker($this->sheet, 1405, 4));
-
-        // The other project of the month is not locked.
-        $editor->setRowProject($this->manager, $this->rowB, null);
-        $this->assertNull($this->rowB->fresh()->project_id);
-    }
-
-    public function test_the_grid_shows_finance_its_step_and_keeps_the_rows_locked(): void
+    public function test_the_grid_shows_finance_its_step_and_keeps_the_rows_locked_but_for_the_manager(): void
     {
         $this->sheetProject($this->projectA)->update(['stage' => Stage::CeoApproved]);
         $finance = User::factory()->finance()->create();
@@ -94,11 +50,17 @@ class CeoStepTest extends TestCase
         $this->assertStringContainsString('data-act="approve" aria-label="تایید رکورد', $table);
         $this->assertStringNotContainsString('data-cell data-row="'.$this->rowA->id.'"', $table);
 
-        // The manager sees the row locked, and cannot pick the project for new rows.
-        $html = Livewire::actingAs($this->manager)->test(Grid::class, ['sheet' => $this->sheet])->html();
-        $this->assertStringContainsString('title="لیست این پروژه قفل است (تایید مدیرعامل یا نهایی)"><input type="checkbox" data-select-row="'.$this->rowA->id.'" disabled', $html);
-        $this->assertStringContainsString('<option value="'.$this->projectA->id.'" disabled>دماوند</option>', $html);
-        $this->assertStringContainsString('data-select-row="'.$this->rowB->id.'" aria-label', $html);
+        // The manager may still change it, and is told how that is recorded.
+        $html = Livewire::actingAs($this->manager)->test(Grid::class, ['sheet' => $this->sheet])->call('filterProject', $this->projectA->id)->html();
+        $this->assertStringContainsString('لیست دماوند «تایید مدیرعامل» گرفته است.', $html);
+        $this->assertStringContainsString('با برچسب «بعد از تایید» در روند تایید لیست و فعالیت‌ها ثبت می‌شود', $html);
+        $table = $this->gridTable(Livewire::actingAs($this->manager)->test(Grid::class, ['sheet' => $this->sheet])->call('$refresh'));
+        $this->assertStringContainsString('<input type="checkbox" data-select-row="'.$this->rowA->id.'" aria-label', $table);
+        $this->assertStringContainsString('data-row="'.$this->rowA->id.'" data-col="'.$this->lockedColumn->id.'"', $table);
+        $this->assertStringContainsString('<option value="'.$this->projectA->id.'">دماوند</option>', $table);
+
+        // Nobody else gets that notice.
+        Livewire::actingAs($finance)->test(Grid::class, ['sheet' => $this->sheet])->call('filterProject', $this->projectA->id)->assertDontSee('شما به‌عنوان مدیر');
     }
 
     public function test_finance_is_invited_without_projects(): void

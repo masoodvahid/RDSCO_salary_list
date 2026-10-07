@@ -18,7 +18,7 @@ $width = fn (string $key, int $default) => $widths[$key] ?? $default;
 $resize = fn (string $key) => '<span class="col-resize" data-col-resize="'.e($key).'" title="برای تغییر عرض ستون بکشید (دوبار کلیک: عرض پیش‌فرض)" aria-hidden="true"></span>';
 @endphp
 @if ($isManager)
-<template id="project-options"><option value="">— انتخاب پروژه</option>@foreach ($sheetProjects as $sp)<option value="{{ $sp->project_id }}" @disabled($sp->stage->isLocked())>{{ $sp->project->name }}</option>@endforeach</template>
+<template id="project-options"><option value="">— انتخاب پروژه</option>@foreach ($sheetProjects as $sp)<option value="{{ $sp->project_id }}">{{ $sp->project->name }}</option>@endforeach</template>
 @endif
 <table @class(['sheet', 'has-select' => $isManager]) style="--w-first: {{ $width('f:first_name', 120) }}px">
 <thead>
